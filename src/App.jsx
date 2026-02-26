@@ -231,19 +231,34 @@ export default function UniSwap() {
   // ── Auth ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) { setSession(data.session); setScreen("app"); fetchProfile(data.session.user.id); }
+      if (data?.session) {
+        setSession(data.session);
+        fetchProfile(data.session.user.id).then(() => setScreen("app"));
+      } else {
+        setScreen("login");
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-      if (s) { setScreen("app"); fetchProfile(s.user.id); }
-      else { setScreen("login"); setProfile(null); }
+      if (s) {
+        setSession(s);
+        fetchProfile(s.user.id).then(() => setScreen("app"));
+      } else {
+        setSession(null);
+        setProfile(null);
+        setScreen("login");
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
 
   const fetchProfile = async (uid) => {
-    const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
-    if (data) setProfile(data);
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
+      if (data) setProfile(data);
+      else setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
+    } catch (e) {
+      setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
+    }
   };
 
   const handleSignUp = async () => {
@@ -254,8 +269,11 @@ export default function UniSwap() {
     try {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) { showToast(error.message, "error"); return; }
-      await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
-      showToast("Account created! Check your email to verify.");
+      if (data?.user?.id) {
+        await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
+        setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
+      }
+      showToast("Account created successfully! 🎉");
     } catch (e) {
       showToast("Something went wrong. Check your connection.", "error");
     } finally {
@@ -290,20 +308,30 @@ export default function UniSwap() {
 
   const fetchListings = async () => {
     setLoading(true);
-    let q = supabase.from("listings").select("*, profiles(full_name)").eq("is_sold", false).order("created_at", { ascending: false });
-    if (activeCat !== "All") q = q.eq("category", activeCat);
-    const { data } = await q;
-    setListings(data || []);
-    setLoading(false);
+    try {
+      let q = supabase.from("listings").select("*, profiles(full_name)").eq("is_sold", false).order("created_at", { ascending: false });
+      if (activeCat !== "All") q = q.eq("category", activeCat);
+      const { data } = await q;
+      setListings(data || []);
+    } catch (e) {
+      setListings([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePostListing = async () => {
     if (!sellTitle || !sellPrice) return showToast("Title and price are required", "error");
     setLoading(true);
-    const { error } = await supabase.from("listings").insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: session.user.id, is_sold: false });
-    if (error) { showToast(error.message, "error"); }
-    else { showToast("Listing posted! 🎉"); setSellTitle(""); setSellPrice(""); setSellDesc(""); fetchListings(); setTab("home"); }
-    setLoading(false);
+    try {
+      const { error } = await supabase.from("listings").insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: session.user.id, is_sold: false });
+      if (error) { showToast(error.message, "error"); }
+      else { showToast("Listing posted! 🎉"); setSellTitle(""); setSellPrice(""); setSellDesc(""); fetchListings(); setTab("home"); }
+    } catch (e) {
+      showToast("Something went wrong. Try again.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── Messages ────────────────────────────────────────────────────────────────
@@ -673,4 +701,4 @@ export default function UniSwap() {
       </div>
     </div>
   );
-  }
+         }
