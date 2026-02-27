@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
-// ── Supabase client via CDN ──────────────────────────────────────────────────
+// ── Supabase client ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://uypunathqfvyhuiiisov.supabase.co";
 const SUPABASE_KEY = "sb_publishable_oyW3D5yURCp60CzPuPAfLQ_pcXf4_BI";
 
-// Minimal Supabase REST client (no external dependency needed)
 const supabase = (() => {
   const headers = { "Content-Type": "application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
   const rest = (path) => `${SUPABASE_URL}/rest/v1/${path}`;
@@ -13,43 +12,98 @@ const supabase = (() => {
   let _session = null;
   const _listeners = [];
 
+  // ── use localStorage so session survives page reloads ──
+  const saveSession = (data) => {
+    _session = data;
+    if (data) localStorage.setItem("sb_session", JSON.stringify(data));
+    else localStorage.removeItem("sb_session");
+  };
+
+  const loadSession = () => {
+    try {
+      const raw = localStorage.getItem("sb_session");
+      if (raw) { _session = JSON.parse(raw); return _session; }
+    } catch(e) { localStorage.removeItem("sb_session"); }
+    return null;
+  };
+
+  // ── parse JWT to extract user info ──
+  const parseJwt = (token) => {
+    try {
+      const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      return JSON.parse(atob(base64));
+    } catch(e) { return {}; }
+  };
+
+  const buildSession = (data) => {
+    if (!data?.access_token) return null;
+    const claims = parseJwt(data.access_token);
+    return {
+      ...data,
+      user: {
+        id: claims.sub,
+        email: claims.email,
+        ...data.user
+      }
+    };
+  };
+
   const getSession = async () => {
-    const raw = sessionStorage.getItem("sb_session");
-    if (raw) { _session = JSON.parse(raw); return { data: { session: _session } }; }
+    const s = loadSession();
+    if (s?.access_token) return { data: { session: buildSession(s) } };
     return { data: { session: null } };
   };
 
   const signUp = async ({ email, password }) => {
     const res = await fetch(auth("signup"), { method: "POST", headers, body: JSON.stringify({ email, password }) });
     const data = await res.json();
-    if (data.access_token) { _session = data; sessionStorage.setItem("sb_session", JSON.stringify(data)); _listeners.forEach(fn => fn("SIGNED_IN", data)); return { data, error: null }; }
+    if (data.access_token) {
+      const session = buildSession(data);
+      saveSession(session);
+      _listeners.forEach(fn => fn("SIGNED_IN", session));
+      return { data: { user: session.user, session }, error: null };
+    }
     return { data: null, error: { message: data.msg || data.error_description || "Sign up failed" } };
   };
 
   const signInWithPassword = async ({ email, password }) => {
     const res = await fetch(auth("token?grant_type=password"), { method: "POST", headers, body: JSON.stringify({ email, password }) });
     const data = await res.json();
-    if (data.access_token) { _session = data; sessionStorage.setItem("sb_session", JSON.stringify(data)); _listeners.forEach(fn => fn("SIGNED_IN", data)); return { data, error: null }; }
+    if (data.access_token) {
+      const session = buildSession(data);
+      saveSession(session);
+      _listeners.forEach(fn => fn("SIGNED_IN", session));
+      return { data: { user: session.user, session }, error: null };
+    }
     return { data: null, error: { message: data.msg || data.error_description || "Login failed" } };
   };
 
-  const signOut = async () => { _session = null; sessionStorage.removeItem("sb_session"); _listeners.forEach(fn => fn("SIGNED_OUT", null)); return {}; };
+  const signOut = async () => {
+    saveSession(null);
+    _listeners.forEach(fn => fn("SIGNED_OUT", null));
+    return {};
+  };
 
-  const onAuthStateChange = (fn) => { _listeners.push(fn); return { data: { subscription: { unsubscribe: () => {} } } }; };
+  const onAuthStateChange = (fn) => {
+    _listeners.push(fn);
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  };
 
-  const authHeaders = () => ({ ...headers, "Authorization": `Bearer ${_session?.access_token || SUPABASE_KEY}` });
+  const authHeaders = () => ({
+    ...headers,
+    "Authorization": `Bearer ${_session?.access_token || SUPABASE_KEY}`
+  });
 
   const from = (table) => {
     let _filters = []; let _select = "*"; let _order = null; let _single = false;
-
     const q = {
       select: (s) => { _select = s; return q; },
-      eq: (col, val) => { _filters.push(`${col}=eq.${val}`); return q; },
+      eq: (col, val) => { _filters.push(`${col}=eq.${encodeURIComponent(val)}`); return q; },
       or: (str) => { _filters.push(`or=(${str})`); return q; },
       order: (col, { ascending } = {}) => { _order = `${col}.${ascending ? "asc" : "desc"}`; return q; },
       single: () => { _single = true; return q; },
       insert: async (body) => {
-        const res = await fetch(`${rest(table)}`, { method: "POST", headers: { ...authHeaders(), "Prefer": "return=representation" }, body: JSON.stringify(body) });
+        const res = await fetch(rest(table), { method: "POST", headers: { ...authHeaders(), "Prefer": "return=representation" }, body: JSON.stringify(body) });
         const data = await res.json();
         return { data: Array.isArray(data) ? data[0] : data, error: res.ok ? null : data };
       },
@@ -69,7 +123,6 @@ const supabase = (() => {
         resolve({ data: data || null, error: res.ok ? null : data });
       }
     };
-    // make it awaitable
     q[Symbol.toStringTag] = "Promise";
     return q;
   };
@@ -196,7 +249,7 @@ export default function UniSwap() {
   const [session, setSession]         = useState(null);
   const [profile, setProfile]         = useState(null);
   const [tab, setTab]                 = useState("home");
-  const [screen, setScreen]           = useState("login"); // login | signup | app
+  const [screen, setScreen]           = useState("loading"); // loading | login | signup | app
   const [loginStep, setLoginStep]     = useState("email");
   const [listings, setListings]       = useState([]);
   const [chats, setChats]             = useState([]);
@@ -208,6 +261,7 @@ export default function UniSwap() {
   const [loading, setLoading]         = useState(false);
   const [toast, setToast]             = useState({ msg: "", type: "ok" });
   const [liked, setLiked]             = useState({});
+  const [showPassword, setShowPassword] = useState(false);
   const msgEndRef = useRef(null);
 
   // form state
@@ -241,7 +295,10 @@ export default function UniSwap() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       if (s) {
         setSession(s);
-        fetchProfile(s.user.id).then(() => setScreen("app"));
+        // Small delay to ensure profile insert has completed before switching screen
+        setTimeout(() => {
+          fetchProfile(s.user.id).then(() => setScreen("app"));
+        }, 1500);
       } else {
         setSession(null);
         setProfile(null);
@@ -254,8 +311,12 @@ export default function UniSwap() {
   const fetchProfile = async (uid) => {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
-      if (data) setProfile(data);
-      else setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
+      if (data) {
+        setProfile(data);
+      } else {
+        // Profile not found — use a default so app never crashes
+        setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
+      }
     } catch (e) {
       setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
     }
@@ -268,12 +329,22 @@ export default function UniSwap() {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) { showToast(error.message, "error"); return; }
+      if (error) { showToast(error.message, "error"); setLoading(false); return; }
       if (data?.user?.id) {
-        await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
+        // Insert profile BEFORE auth state change fires
+        await supabase.from("profiles").insert({
+          id: data.user.id,
+          full_name: fullName,
+          email,
+          matric_number: matric,
+          rating: 0
+        });
+        // Set profile locally so no fetch needed
         setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
+        setSession(data.session);
+        showToast("Account created! Welcome to UniSwap 🎉");
+        setScreen("app");
       }
-      showToast("Account created successfully! 🎉");
     } catch (e) {
       showToast("Something went wrong. Check your connection.", "error");
     } finally {
@@ -382,16 +453,27 @@ export default function UniSwap() {
 
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // LOGIN SCREEN
-  // ════════════════════════════════════════════════════════════════════════════
-  if (screen !== "app") return (
+  // ── LOADING SCREEN ──
+  if (screen === "loading") return (
+    <div style={{ ...S.root }}>
+      <div style={{ ...S.phone, alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🛒</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 28, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 24 }}>UniSwap</div>
+          <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto" }} />
+          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── LOGIN SCREEN ──
+  if (screen === "login" || screen === "signup") return (
     <div style={S.root}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <Toast {...toast} />
       {modal && <Modal type={modal} onClose={() => setModal(null)} />}
       <div style={S.phone}>
-        <div style={S.statusBar}><span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>9:41</span><span style={{ color: C.text, fontSize: 13 }}>●●● 📶 🔋</span></div>
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 28px" }}>
 
           {/* Logo */}
@@ -412,7 +494,12 @@ export default function UniSwap() {
           {screen === "login" && loginStep === "password" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>Welcome back 👋</div>
-              <Input type="password" placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+              <div style={{ position: "relative" }}>
+                <Input type={showPassword ? "text" : "password"} placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ paddingRight: 48 }} />
+                <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex", alignItems: "center" }}>
+                  {showPassword ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+                </div>
+              </div>
               <Btn primary onClick={handleLogin}>{loading ? "Signing in…" : "Sign In"}</Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => setLoginStep("email")}>← Back</div>
             </div>
@@ -424,7 +511,12 @@ export default function UniSwap() {
               <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
               <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
               <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
-              <Input type="password" placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} />
+              <div style={{ position: "relative" }}>
+                <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex", alignItems: "center" }}>
+                  {showPassword ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+                </div>
+              </div>
 
               {/* Single checkbox */}
               <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -543,7 +635,6 @@ export default function UniSwap() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <Toast {...toast} />
       <div style={S.phone}>
-        <div style={S.statusBar}><span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>9:41</span><span style={{ color: C.text, fontSize: 13 }}>●●● 📶 🔋</span></div>
 
         {/* ── HOME ── */}
         {tab === "home" && (
@@ -701,4 +792,4 @@ export default function UniSwap() {
       </div>
     </div>
   );
-         }
+  }
