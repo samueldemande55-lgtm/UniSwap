@@ -77,6 +77,7 @@ export default function UniSwap() {
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [activePhoto, setActivePhoto] = useState(0);
   const msgEndRef = useRef(null);
 
   // Form state
@@ -457,7 +458,6 @@ export default function UniSwap() {
   );
 
   // ── Listing detail ─────────────────────────────────────────────────────────
-  const [activePhoto, setActivePhoto] = useState(0);
   if (selectedListing && tab === "home") {
   const imgs = getImages(selectedListing);
   return (
@@ -712,4 +712,4 @@ export default function UniSwap() {
       </div>
     </div>
   );
-        }
+    }
