@@ -10,6 +10,15 @@ const C = { bg: "#0A0E1A", card: "#111827", border: "#1E2A3A", accent: "#00D4FF"
 const CATEGORIES = ["All","Books","Electronics","Appliances","Furniture","Tools","Music","Accessories"];
 
 const css = (...args) => Object.assign({}, ...args);
+const getImages = (listing) => {
+  try {
+    const urls = listing?.image_urls;
+    if (!urls) return [];
+    if (Array.isArray(urls)) return urls;
+    if (typeof urls === "string") return JSON.parse(urls);
+    return [];
+  } catch { return []; }
+};
 const Pill = ({ children, active, color = C.accent, onClick }) => (<div onClick={onClick} style={{ background: active ? color : C.pill, color: active ? "#000" : C.muted, border: `1px solid ${active ? color : C.border}`, borderRadius: 20, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "all .2s" }}>{children}</div>);
 const Input = ({ style, ...props }) => (<input style={css({ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "13px 16px", color: C.text, fontSize: 15, width: "100%", outline: "none", boxSizing: "border-box" }, style)} {...props} />);
 const Btn = ({ primary, style, children, ...props }) => (<button style={css({ background: primary ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill, color: primary ? "#000" : C.text, border: "none", borderRadius: 14, padding: "14px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", transition: "all .2s" }, style)} {...props}>{children}</button>);
@@ -80,6 +89,10 @@ export default function UniSwap() {
   const [sellCat, setSellCat] = useState("Books");
   const [sellCond, setSellCond] = useState("Good");
   const [sellDesc, setSellDesc] = useState("");
+  const [sellPhotos, setSellPhotos] = useState([]); // file objects
+  const [sellPhotosPreviews, setSellPhotosPreviews] = useState([]); // base64 previews
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const photoInputRef = useRef(null);
 
   const showToast = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast({ msg: "", type: "ok" }), 3000); };
 
@@ -167,13 +180,67 @@ export default function UniSwap() {
     finally { setLoading(false); }
   };
 
+  const handlePhotoSelect = (e) => {
+    const files = Array.from(e.target.files);
+    const remaining = 5 - sellPhotos.length;
+    const selected = files.slice(0, remaining);
+    if (files.length > remaining) showToast(`Max 5 photos. Only ${remaining} slot(s) left.`, "error");
+    const newFiles = [...sellPhotos, ...selected];
+    setSellPhotos(newFiles);
+    // Generate previews
+    selected.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => setSellPhotosPreviews(p => [...p, ev.target.result]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removePhoto = (index) => {
+    setSellPhotos(p => p.filter((_, i) => i !== index));
+    setSellPhotosPreviews(p => p.filter((_, i) => i !== index));
+  };
+
+  const uploadPhotos = async (listingId) => {
+    const urls = [];
+    for (let i = 0; i < sellPhotos.length; i++) {
+      const file = sellPhotos[i];
+      const ext = file.name.split(".").pop();
+      const path = `${user.id}/${listingId}/${i}.${ext}`;
+      const { error } = await supabase.storage.from("listings").upload(path, file, { upsert: true });
+      if (!error) {
+        const { data } = supabase.storage.from("listings").getPublicUrl(path);
+        urls.push(data.publicUrl);
+      }
+      setUploadProgress(Math.round(((i + 1) / sellPhotos.length) * 100));
+    }
+    return urls;
+  };
+
   const handlePostListing = async () => {
     if (!sellTitle || !sellPrice) return showToast("Title and price required", "error");
     setLoading(true);
+    setUploadProgress(0);
     try {
-      const { error } = await supabase.from("listings").insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false });
-      if (error) showToast(error.message, "error");
-      else { showToast("Listing posted! 🎉"); setSellTitle(""); setSellPrice(""); setSellDesc(""); fetchListings(); setTab("home"); }
+      // Insert listing first to get ID
+      const { data: listing, error } = await supabase.from("listings").insert({
+        title: sellTitle, price: parseInt(sellPrice), category: sellCat,
+        condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false,
+        image_urls: []
+      }).select().single();
+      if (error) { showToast(error.message, "error"); return; }
+
+      // Upload photos if any
+      let imageUrls = [];
+      if (sellPhotos.length > 0) {
+        imageUrls = await uploadPhotos(listing.id);
+        // Store as JSON array — compatible with jsonb column
+        await supabase.from("listings").update({ image_urls: JSON.stringify(imageUrls) }).eq("id", listing.id);
+      }
+
+      showToast("Listing posted! 🎉");
+      setSellTitle(""); setSellPrice(""); setSellDesc("");
+      setSellPhotos([]); setSellPhotosPreviews([]); setUploadProgress(0);
+      fetchListings(); setTab("home");
     } catch { showToast("Failed to post. Try again.", "error"); }
     finally { setLoading(false); }
   };
@@ -239,71 +306,116 @@ export default function UniSwap() {
 
   // ── Auth screens ───────────────────────────────────────────────────────────
   if (!user) return (
-    <div style={S.root}>
+    <div style={{ fontFamily: "'DM Sans',sans-serif", background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: ${C.bg}; }
+        .auth-wrapper { display: flex; min-height: 100vh; }
+        .auth-banner { display: none; }
+        .auth-form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+        .auth-card { width: 100%; max-width: 420px; background: ${C.card}; border-radius: 28px; padding: 36px 32px; border: 1px solid ${C.border}; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+        @media (max-width: 480px) {
+          .auth-form-side { padding: 0; align-items: stretch; }
+          .auth-card { border-radius: 0; min-height: 100vh; padding: 48px 24px 32px; box-shadow: none; border: none; display: flex; flex-direction: column; justify-content: center; }
+        }
+        @media (min-width: 900px) {
+          .auth-banner { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 48px; background: linear-gradient(160deg, #0D1421 0%, #111827 100%); border-right: 1px solid ${C.border}; position: relative; overflow: hidden; }
+          .auth-form-side { flex: 0 0 480px; overflow-y: auto; }
+          .auth-card { box-shadow: none; border: none; background: transparent; }
+        }
+      `}</style>
       <Toast {...toast} />
       {modal && <Modal type={modal} onClose={() => setModal(null)} />}
-      <div style={S.phone}>
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 28px" }}>
 
-          <div style={{ marginBottom: 36, textAlign: "center" }}>
-            <div style={{ fontSize: 44, marginBottom: 8 }}>🛒</div>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
-            <div style={{ color: C.muted, fontSize: 14, marginTop: 6 }}>Your campus marketplace</div>
+      <div className="auth-wrapper">
+
+        {/* LEFT BANNER — visible on desktop only */}
+        <div className="auth-banner">
+          <div style={{ position: "absolute", width: 500, height: 500, borderRadius: "50%", background: `${C.accent}08`, top: -100, left: -100 }} />
+          <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: `${C.warm}08`, bottom: -50, right: -50 }} />
+          <div style={{ textAlign: "center", position: "relative", zIndex: 1, maxWidth: 400 }}>
+            <div style={{ fontSize: 72, marginBottom: 20 }}>🛒</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 48, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 16 }}>UniSwap</div>
+            <div style={{ color: C.muted, fontSize: 18, lineHeight: 1.7, marginBottom: 40 }}>The trusted campus marketplace for students to buy, sell and swap items safely.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {[["🔒", "Campus emails only — verified & safe"],["⚡", "Post a listing in under 60 seconds"],["💬", "Chat directly with buyers & sellers"],["🎓", "Built exclusively for campus life"]].map(([icon, text]) => (
+                <div key={text} style={{ display: "flex", alignItems: "center", gap: 14, background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "12px 16px" }}>
+                  <span style={{ fontSize: 22 }}>{icon}</span>
+                  <span style={{ color: C.text, fontSize: 14, fontWeight: 500 }}>{text}</span>
+                </div>
+              ))}
+            </div>
           </div>
+        </div>
 
-          {/* LOGIN */}
-          {authScreen === "login" && loginStep === "email" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>School Email</div>
-                <Input placeholder="you@uniemail.edu.ng" value={email} onChange={e => setEmail(e.target.value)} />
-              </div>
-              <Btn primary onClick={() => setLoginStep("password")}>Continue →</Btn>
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13 }}>New student? <span style={{ color: C.accent, cursor: "pointer", fontWeight: 600 }} onClick={() => setAuthScreen("signup")}>Create account</span></div>
+        {/* RIGHT FORM SIDE */}
+        <div className="auth-form-side">
+          <div className="auth-card">
+
+            {/* Logo — shown on mobile & tablet only (hidden on desktop where banner shows it) */}
+            <div style={{ marginBottom: 32, textAlign: "center" }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🛒</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 28, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
+              <div style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>Your campus marketplace</div>
             </div>
-          )}
 
-          {authScreen === "login" && loginStep === "password" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>Welcome back 👋</div>
-              <div style={{ position: "relative" }}>
-                <Input type={showPassword ? "text" : "password"} placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ paddingRight: 48 }} />
-                <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}>
-                  <EyeIcon open={showPassword} />
+            {/* LOGIN */}
+            {authScreen === "login" && loginStep === "email" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Welcome back</div>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>School Email</div>
+                  <Input placeholder="you@uniemail.edu.ng" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && setLoginStep("password")} />
                 </div>
+                <Btn primary onClick={() => setLoginStep("password")}>Continue →</Btn>
+                <div style={{ textAlign: "center", color: C.muted, fontSize: 14 }}>New student? <span style={{ color: C.accent, cursor: "pointer", fontWeight: 600 }} onClick={() => setAuthScreen("signup")}>Create account</span></div>
               </div>
-              <Btn primary onClick={handleLogin}>{loading ? "Signing in…" : "Sign In"}</Btn>
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => setLoginStep("email")}>← Back</div>
-            </div>
-          )}
+            )}
 
-          {/* SIGNUP */}
-          {authScreen === "signup" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ color: C.text, fontSize: 16, fontWeight: 600 }}>Create your account</div>
-              <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
-              <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
-              <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
-              <div style={{ position: "relative" }}>
-                <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
-                <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}>
-                  <EyeIcon open={showPassword} />
+            {authScreen === "login" && loginStep === "password" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Enter password</div>
+                <div style={{ color: C.muted, fontSize: 14 }}>{email}</div>
+                <div style={{ position: "relative" }}>
+                  <Input type={showPassword ? "text" : "password"} placeholder="Enter password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ paddingRight: 48 }} />
+                  <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}>
+                    <EyeIcon open={showPassword} />
+                  </div>
                 </div>
+                <Btn primary onClick={handleLogin}>{loading ? "Signing in…" : "Sign In"}</Btn>
+                <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => setLoginStep("email")}>← Use a different email</div>
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all .2s" }}>
-                  {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
-                </div>
-                <span style={{ color: C.muted, fontSize: 13 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
-              </label>
-              <Btn primary onClick={handleSignUp} style={{ opacity: acceptedTerms ? 1 : 0.5 }}>{loading ? "Creating…" : "Join UniSwap 🚀"}</Btn>
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
-            </div>
-          )}
+            )}
 
-          <div style={{ marginTop: 24, padding: 14, background: `${C.accent}11`, borderRadius: 12, border: `1px solid ${C.accent}22`, textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: C.muted }}>🔒 Only verified campus emails allowed. Safe & trusted.</div>
+            {/* SIGNUP */}
+            {authScreen === "signup" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Create account</div>
+                <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
+                <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
+                <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
+                <div style={{ position: "relative" }}>
+                  <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                  <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}>
+                    <EyeIcon open={showPassword} />
+                  </div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                  <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all .2s" }}>
+                    {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
+                  </div>
+                  <span style={{ color: C.muted, fontSize: 13 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
+                </label>
+                <Btn primary onClick={handleSignUp} style={{ opacity: acceptedTerms ? 1 : 0.5 }}>{loading ? "Creating…" : "Join UniSwap 🚀"}</Btn>
+                <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}22`, textAlign: "center" }}>
+              <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed. Safe & trusted.</div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -345,16 +457,48 @@ export default function UniSwap() {
   );
 
   // ── Listing detail ─────────────────────────────────────────────────────────
-  if (selectedListing && tab === "home") return (
+  const [activePhoto, setActivePhoto] = useState(0);
+  if (selectedListing && tab === "home") {
+  const imgs = getImages(selectedListing);
+  return (
     <div style={S.root}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <div style={S.phone}>
         <div style={{ padding: "14px 20px 12px", display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ cursor: "pointer", color: C.accent, fontSize: 20 }} onClick={() => setSelectedListing(null)}>←</span>
+          <span style={{ cursor: "pointer", color: C.accent, fontSize: 20 }} onClick={() => { setSelectedListing(null); setActivePhoto(0); }}>←</span>
           <span style={{ color: C.text, fontWeight: 700 }}>Listing Detail</span>
         </div>
         <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
-          <div style={{ background: `${C.accent}11`, height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80 }}>📦</div>
+
+          {/* Photo gallery */}
+          {imgs.length > 0 ? (
+            <div>
+              <div style={{ height: 220, overflow: "hidden", position: "relative", background: C.pill }}>
+                <img src={imgs[activePhoto]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {imgs.length > 1 && (
+                  <div style={{ position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 6 }}>
+                    {imgs.map((_, i) => (
+                      <div key={i} onClick={() => setActivePhoto(i)} style={{ width: i === activePhoto ? 20 : 6, height: 6, borderRadius: 3, background: i === activePhoto ? C.accent : "#ffffff88", transition: "all .2s", cursor: "pointer" }} />
+                    ))}
+                  </div>
+                )}
+                {activePhoto > 0 && <div onClick={() => setActivePhoto(p => p - 1)} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 16 }}>‹</div>}
+                {activePhoto < imgs.length - 1 && <div onClick={() => setActivePhoto(p => p + 1)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 16 }}>›</div>}
+              </div>
+              {imgs.length > 1 && (
+                <div style={{ display: "flex", gap: 8, padding: "10px 16px", overflowX: "auto" }}>
+                  {imgs.map((url, i) => (
+                    <div key={i} onClick={() => setActivePhoto(i)} style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", border: `2px solid ${i === activePhoto ? C.accent : "transparent"}`, flexShrink: 0, cursor: "pointer" }}>
+                      <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ background: `${C.accent}11`, height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80 }}>📦</div>
+          )}
+
           <div style={{ padding: "20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
@@ -384,6 +528,7 @@ export default function UniSwap() {
       </div>
     </div>
   );
+  }
 
   // ── Main app ───────────────────────────────────────────────────────────────
   return (
@@ -413,10 +558,12 @@ export default function UniSwap() {
             {loading ? <Loader /> : (
               <div style={{ padding: "0 12px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {listings.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", color: C.muted, padding: 40 }}>No listings yet. Be the first to sell! 🚀</div>}
-                {listings.map(l => (
+                {listings.map(l => {
+                  const imgs = getImages(l);
+                  return (
                   <div key={l.id} onClick={() => setSelectedListing(l)} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", cursor: "pointer" }}>
-                    <div style={{ background: `${C.accent}11`, height: 90, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 42, position: "relative" }}>
-                      📦
+                    <div style={{ background: `${C.accent}11`, height: 90, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 42, position: "relative", overflow: "hidden" }}>
+                      {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span>📦</span>}
                       <div style={{ position: "absolute", top: 8, right: 8, background: `${C.bg}CC`, borderRadius: 20, padding: "3px 8px", fontSize: 10, color: C.muted }}>{l.condition}</div>
                       <div onClick={e => { e.stopPropagation(); setLiked(p => ({ ...p, [l.id]: !p[l.id] })); }} style={{ position: "absolute", bottom: 8, right: 8, fontSize: 16 }}>{liked[l.id] ? "❤️" : "🤍"}</div>
                     </div>
@@ -429,7 +576,8 @@ export default function UniSwap() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -464,11 +612,44 @@ export default function UniSwap() {
             <div style={{ padding: "20px" }}>
               <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Sell an Item</div>
               <div style={{ color: C.muted, fontSize: 14, marginBottom: 24 }}>Turn your unused stuff into cash 💰</div>
-              <div style={{ background: `${C.accent}11`, border: `2px dashed ${C.accent}44`, borderRadius: 18, height: 130, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-                <div style={{ fontSize: 32 }}>📷</div>
-                <div style={{ color: C.accent, fontSize: 14, fontWeight: 700, marginTop: 8 }}>Add Photos</div>
-                <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Coming soon</div>
+
+              {/* Photo Upload Area */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Photos ({sellPhotos.length}/5)</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {/* Photo previews */}
+                  {sellPhotosPreviews.map((src, i) => (
+                    <div key={i} style={{ position: "relative", width: 80, height: 80, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      <div onClick={() => removePhoto(i)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.7)", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 700 }}>✕</div>
+                      {i === 0 && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: `${C.accent}CC`, fontSize: 9, fontWeight: 700, color: "#000", textAlign: "center", padding: "2px 0" }}>MAIN</div>}
+                    </div>
+                  ))}
+                  {/* Add photo button */}
+                  {sellPhotos.length < 5 && (
+                    <div onClick={() => photoInputRef.current?.click()} style={{ width: 80, height: 80, borderRadius: 12, border: `2px dashed ${C.accent}66`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", background: `${C.accent}0A`, gap: 4 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      <span style={{ color: C.accent, fontSize: 10, fontWeight: 600 }}>Add</span>
+                    </div>
+                  )}
+                </div>
+                <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoSelect} />
+                <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>First photo is the main thumbnail. Max 5 photos.</div>
               </div>
+
+              {/* Upload progress */}
+              {loading && uploadProgress > 0 && uploadProgress < 100 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ color: C.muted, fontSize: 12 }}>Uploading photos…</span>
+                    <span style={{ color: C.accent, fontSize: 12, fontWeight: 700 }}>{uploadProgress}%</span>
+                  </div>
+                  <div style={{ background: C.pill, borderRadius: 10, height: 6, overflow: "hidden" }}>
+                    <div style={{ background: `linear-gradient(135deg,${C.accent},#0099CC)`, height: "100%", width: `${uploadProgress}%`, borderRadius: 10, transition: "width .3s" }} />
+                  </div>
+                </div>
+              )}
+
               {[["Item Name", sellTitle, setSellTitle, "text", "e.g. Calculus Textbook"], ["Price (₦)", sellPrice, setSellPrice, "number", "e.g. 4500"]].map(([label, val, setter, type, ph]) => (
                 <div key={label} style={{ marginBottom: 14 }}>
                   <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
@@ -487,7 +668,7 @@ export default function UniSwap() {
                 <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Description</div>
                 <textarea style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "13px 16px", color: C.text, fontSize: 14, width: "100%", height: 80, resize: "none", outline: "none", boxSizing: "border-box" }} placeholder="Describe condition, pickup spot…" value={sellDesc} onChange={e => setSellDesc(e.target.value)} />
               </div>
-              <Btn primary onClick={handlePostListing}>{loading ? "Posting…" : "🚀 Post Listing"}</Btn>
+              <Btn primary onClick={handlePostListing}>{loading ? `${uploadProgress > 0 ? `Uploading ${uploadProgress}%…` : "Posting…"}` : "🚀 Post Listing"}</Btn>
             </div>
           </div>
         )}
@@ -531,4 +712,4 @@ export default function UniSwap() {
       </div>
     </div>
   );
-                     }
+        }
