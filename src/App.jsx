@@ -184,6 +184,9 @@ export default function UniSwap() {
   const [activePhoto, setActivePhoto]   = useState(0);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [newPassword, setNewPassword]   = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [resetSent, setResetSent]       = useState(false);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -211,6 +214,12 @@ export default function UniSwap() {
       setAuthReady(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (_e === "PASSWORD_RECOVERY") {
+        setUser(session.user);
+        setAuthScreen("new-password");
+        setAuthReady(true);
+        return;
+      }
       if (session?.user) { setUser(session.user); fetchProfile(session.user.id); }
       else { setUser(null); setProfile(null); }
     });
@@ -255,6 +264,38 @@ export default function UniSwap() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setTab("home"); setAuthScreen("login"); setLoginStep("email");
+  };
+
+  const handleResetPassword = async () => {
+    if (!email) return showToast("Enter your school email first", "error");
+    if (!email.includes("@")) return showToast("Please enter a valid email", "error");
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin
+      });
+      if (error) { showToast(error.message, "error"); }
+      else { setResetSent(true); }
+    } catch { showToast("Connection error. Try again.", "error"); }
+    finally { setLoading(false); }
+  };
+
+  const handleNewPassword = async () => {
+    if (!newPassword) return showToast("Please enter a new password", "error");
+    if (newPassword.length < 6) return showToast("Password must be at least 6 characters", "error");
+    if (newPassword !== newPasswordConfirm) return showToast("Passwords do not match", "error");
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) { showToast(error.message, "error"); }
+      else {
+        showToast("Password updated! Please log in. ✅");
+        await supabase.auth.signOut();
+        setNewPassword(""); setNewPasswordConfirm("");
+        setAuthScreen("login"); setLoginStep("email");
+      }
+    } catch { showToast("Something went wrong. Try again.", "error"); }
+    finally { setLoading(false); }
   };
 
   // ── Listings ───────────────────────────────────────────────────────────────
@@ -415,7 +456,48 @@ export default function UniSwap() {
                 <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
               </div>
               <Btn primary onClick={handleLogin}>{loading ? "Signing in…" : "Sign In"}</Btn>
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => setLoginStep("email")}>← Different email</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => setLoginStep("email")}>← Different email</div>
+                <div style={{ color: C.accent, fontSize: 14, cursor: "pointer", fontWeight: 600 }} onClick={() => setAuthScreen("reset")}>Forgot password?</div>
+              </div>
+            </div>
+          )}
+
+          {/* ── FORGOT PASSWORD ── */}
+          {authScreen === "reset" && !resetSent && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ textAlign: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🔑</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Reset Password</div>
+                <div style={{ color: C.muted, fontSize: 14, marginTop: 6, lineHeight: 1.6 }}>Enter your school email and we'll send you a reset link.</div>
+              </div>
+              <div>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>School Email</div>
+                <Input placeholder="you@uniemail.edu.ng" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleResetPassword()} />
+              </div>
+              <Btn primary onClick={handleResetPassword}>{loading ? "Sending…" : "Send Reset Link"}</Btn>
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
+            </div>
+          )}
+
+          {/* ── RESET EMAIL SENT ── */}
+          {authScreen === "reset" && resetSent && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, textAlign: "center" }}>
+              <div style={{ fontSize: 64, marginBottom: 4 }}>📬</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Check your email</div>
+              <div style={{ color: C.muted, fontSize: 15, lineHeight: 1.7 }}>
+                We sent a password reset link to<br />
+                <strong style={{ color: C.text }}>{email}</strong>
+              </div>
+              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16 }}>
+                <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.7 }}>
+                  ✅ Check your inbox and spam folder<br />
+                  ✅ Click the link in the email<br />
+                  ✅ Set your new password
+                </div>
+              </div>
+              <Btn primary onClick={() => { setAuthScreen("login"); setLoginStep("email"); setResetSent(false); }}>Back to Login</Btn>
+              <div style={{ color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={handleResetPassword}>Didn't receive it? <span style={{ color: C.accent, fontWeight: 600 }}>Resend</span></div>
             </div>
           )}
 
@@ -443,6 +525,59 @@ export default function UniSwap() {
           <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}1A`, textAlign: "center" }}>
             <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed</div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── New Password screen (after clicking reset email link) ──────────────────
+  if (authScreen === "new-password") return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <style>{GLOBAL_CSS}</style>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+      <Toast {...toast} />
+      <div style={{ width: "100%", maxWidth: 440, background: C.card, borderRadius: 28, padding: "40px 36px", border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.5)" }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 24, fontWeight: 800 }}>Set New Password</div>
+          <div style={{ color: C.muted, fontSize: 14, marginTop: 6 }}>Choose a strong password for your account</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>New Password</div>
+            <div style={{ position: "relative" }}>
+              <Input type={showPassword ? "text" : "password"} placeholder="Enter new password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ paddingRight: 48 }} />
+              <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+            </div>
+          </div>
+          <div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Confirm Password</div>
+            <div style={{ position: "relative" }}>
+              <Input type={showPassword ? "text" : "password"} placeholder="Repeat new password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} onKeyDown={e => e.key === "Enter" && handleNewPassword()} style={{ paddingRight: 48 }} />
+              <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+            </div>
+            {/* Password match indicator */}
+            {newPasswordConfirm && (
+              <div style={{ marginTop: 6, fontSize: 12, color: newPassword === newPasswordConfirm ? C.green : "#FF5555", fontWeight: 600 }}>
+                {newPassword === newPasswordConfirm ? "✓ Passwords match" : "✕ Passwords do not match"}
+              </div>
+            )}
+          </div>
+          {/* Strength hint */}
+          {newPassword && (
+            <div style={{ background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Password strength</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[6, 8, 10, 12].map(len => (
+                  <div key={len} style={{ flex: 1, height: 4, borderRadius: 2, background: newPassword.length >= len ? (len >= 10 ? C.green : len >= 8 ? C.accent : C.warm) : C.border, transition: "background .2s" }} />
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+                {newPassword.length < 6 ? "Too short" : newPassword.length < 8 ? "Weak" : newPassword.length < 10 ? "Good" : "Strong ✓"}
+              </div>
+            </div>
+          )}
+          <Btn primary onClick={handleNewPassword}>{loading ? "Updating…" : "Update Password"}</Btn>
         </div>
       </div>
     </div>
@@ -840,4 +975,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                                                             }
+      }
