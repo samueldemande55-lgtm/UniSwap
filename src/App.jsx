@@ -187,6 +187,10 @@ export default function UniSwap() {
   const [newPassword, setNewPassword]   = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [resetSent, setResetSent]       = useState(false);
+  const [myListings, setMyListings]     = useState([]);
+  const [myListingsLoading, setMyListingsLoading] = useState(false);
+  const [myListingsTab, setMyListingsTab] = useState("active"); // active | sold
+  const [profileTab, setProfileTab]     = useState("menu"); // menu | listings
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -296,6 +300,36 @@ export default function UniSwap() {
       }
     } catch { showToast("Something went wrong. Try again.", "error"); }
     finally { setLoading(false); }
+  };
+
+  const fetchMyListings = async () => {
+    setMyListingsLoading(true);
+    try {
+      const { data } = await supabase.from("listings").select("*").eq("seller_id", user.id).order("created_at", { ascending: false });
+      setMyListings(data || []);
+    } catch { setMyListings([]); }
+    finally { setMyListingsLoading(false); }
+  };
+
+  useEffect(() => { if (tab === "profile" && user) fetchMyListings(); }, [tab, user]);
+
+  const handleMarkSold = async (id) => {
+    const { error } = await supabase.from("listings").update({ is_sold: true }).eq("id", id);
+    if (!error) {
+      setMyListings(p => p.map(l => l.id === id ? { ...l, is_sold: true } : l));
+      fetchListings();
+      showToast("Marked as sold! 🎉");
+    } else { showToast("Failed to update. Try again.", "error"); }
+  };
+
+  const handleDeleteListing = async (id) => {
+    if (!window.confirm("Delete this listing? This cannot be undone.")) return;
+    const { error } = await supabase.from("listings").delete().eq("id", id);
+    if (!error) {
+      setMyListings(p => p.filter(l => l.id !== id));
+      fetchListings();
+      showToast("Listing deleted.");
+    } else { showToast("Failed to delete. Try again.", "error"); }
   };
 
   // ── Listings ───────────────────────────────────────────────────────────────
@@ -933,30 +967,118 @@ export default function UniSwap() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <div className="page-header"><div className="page-title">Profile</div></div>
             <div className="form-page">
+
               {/* Profile card */}
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "32px 28px", marginBottom: 24, textAlign: "center" }}>
-                <Avatar initials={initials} size={80} />
-                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginTop: 14 }}>{profile?.full_name || "User"}</div>
-                <div style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>{profile?.email || user?.email}</div>
-                <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Matric: {profile?.matric_number || "—"}</div>
-                <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 14 }}>
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "28px 24px", marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                  <Avatar initials={initials} size={72} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>{profile?.full_name || "User"}</div>
+                    <div style={{ color: C.muted, fontSize: 13, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.email || user?.email}</div>
+                    <div style={{ color: C.muted, fontSize: 13, marginTop: 2 }}>Matric: {profile?.matric_number || "—"}</div>
+                  </div>
+                </div>
+                {/* Stats row */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
+                  {[
+                    [myListings.filter(l => !l.is_sold).length, "Active"],
+                    [myListings.filter(l => l.is_sold).length, "Sold"],
+                    [profile?.rating?.toFixed(1) || "0.0", "Rating ⭐"],
+                  ].map(([val, label]) => (
+                    <div key={label} style={{ background: C.pill, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.accent, fontSize: 22, fontWeight: 800 }}>{val}</div>
+                      <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                   <div style={{ background: `${C.green}22`, color: C.green, padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>✓ Campus Verified</div>
-                  <div style={{ background: C.pill, color: C.muted, padding: "5px 14px", borderRadius: 20, fontSize: 12 }}>⭐ {profile?.rating?.toFixed(1) || "0.0"}</div>
                 </div>
               </div>
 
-              {/* Menu items */}
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
-                {[["📦","My Listings"],["🛒","Purchases"],["❤️","Saved Items"],["⭐","Reviews"],["🔔","Notifications"],["⚙️","Settings"],["🆘","Support"]].map(([icon, label], i, arr) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <span style={{ fontSize: 20, width: 28 }}>{icon}</span>
-                    <span style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>{label}</span>
-                    <span style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</span>
-                  </div>
+              {/* Tab switcher: Menu / My Listings */}
+              <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
+                {[["menu", "⚙️ Account"], ["listings", "📦 My Listings"]].map(([id, label]) => (
+                  <div key={id} onClick={() => setProfileTab(id)} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
                 ))}
               </div>
 
-              <Btn danger onClick={handleSignOut}>Sign Out</Btn>
+              {/* ── ACCOUNT MENU ── */}
+              {profileTab === "menu" && (
+                <>
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
+                    {[["🛒","Purchases"],["❤️","Saved Items"],["⭐","Reviews"],["🔔","Notifications"],["⚙️","Settings"],["🆘","Support"]].map(([icon, label], i, arr) => (
+                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: 20, width: 28 }}>{icon}</span>
+                        <span style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>{label}</span>
+                        <span style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Btn danger onClick={handleSignOut}>Sign Out</Btn>
+                </>
+              )}
+
+              {/* ── MY LISTINGS DASHBOARD ── */}
+              {profileTab === "listings" && (
+                <>
+                  {/* Active / Sold tabs */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                    {[["active", `Active (${myListings.filter(l => !l.is_sold).length})`], ["sold", `Sold (${myListings.filter(l => l.is_sold).length})`]].map(([id, label]) => (
+                      <Pill key={id} active={myListingsTab === id} onClick={() => setMyListingsTab(id)}>{label}</Pill>
+                    ))}
+                    <div style={{ marginLeft: "auto" }}>
+                      <Btn primary style={{ padding: "7px 16px", fontSize: 13, borderRadius: 20, width: "auto" }} onClick={() => handleTabChange("sell")}>+ New</Btn>
+                    </div>
+                  </div>
+
+                  {myListingsLoading ? <Loader /> : (() => {
+                    const filtered = myListings.filter(l => myListingsTab === "active" ? !l.is_sold : l.is_sold);
+                    if (filtered.length === 0) return (
+                      <div style={{ textAlign: "center", padding: "48px 20px", color: C.muted }}>
+                        <div style={{ fontSize: 44, marginBottom: 12 }}>{myListingsTab === "active" ? "📭" : "🎉"}</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>{myListingsTab === "active" ? "No active listings" : "No sold items yet"}</div>
+                        <div style={{ fontSize: 13, marginTop: 6 }}>{myListingsTab === "active" ? "Post something to start selling!" : "Mark items as sold when deals close."}</div>
+                        {myListingsTab === "active" && <div style={{ marginTop: 16 }}><Btn primary style={{ width: "auto", padding: "10px 24px" }} onClick={() => handleTabChange("sell")}>🚀 Post a Listing</Btn></div>}
+                      </div>
+                    );
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {filtered.map(l => {
+                          const imgs = getImages(l);
+                          return (
+                            <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", display: "flex", gap: 0 }}>
+                              {/* Thumbnail */}
+                              <div style={{ width: 90, flexShrink: 0, background: C.pill, position: "relative" }}>
+                                {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>📦</div>}
+                                {l.is_sold && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: C.green, fontWeight: 800, fontSize: 13, background: `${C.green}22`, border: `1px solid ${C.green}`, borderRadius: 8, padding: "4px 8px" }}>SOLD</div></div>}
+                              </div>
+                              {/* Details */}
+                              <div style={{ flex: 1, padding: "14px 16px", minWidth: 0 }}>
+                                <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
+                                <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 2 }}>₦{l.price?.toLocaleString()}</div>
+                                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                                  <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "3px 8px", borderRadius: 10 }}>{l.category}</span>
+                                  <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "3px 8px", borderRadius: 10 }}>{l.condition}</span>
+                                  <span style={{ color: C.muted, fontSize: 11, padding: "3px 0" }}>{new Date(l.created_at).toLocaleDateString()}</span>
+                                </div>
+                                {/* Action buttons */}
+                                {!l.is_sold && (
+                                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                                    <div onClick={() => handleMarkSold(l.id)} style={{ background: `${C.green}18`, border: `1px solid ${C.green}44`, color: C.green, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap" }}>✓ Mark Sold</div>
+                                    <div onClick={() => handleDeleteListing(l.id)} style={{ background: "#FF555518", border: "1px solid #FF555544", color: "#FF5555", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer" }}>🗑 Delete</div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
             </div>
           </div>
         )}
@@ -975,4 +1097,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-      }
+                       }
