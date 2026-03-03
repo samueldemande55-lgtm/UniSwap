@@ -182,6 +182,8 @@ export default function UniSwap() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [activePhoto, setActivePhoto]   = useState(0);
+  const [searchQuery, setSearchQuery]   = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -490,7 +492,19 @@ export default function UniSwap() {
       <main className="main-content">
 
         {/* ─── HOME ─── */}
-        {tab === "home" && !selectedListing && (
+        {tab === "home" && !selectedListing && (() => {
+          const filtered = listings.filter(l => {
+            const q = searchQuery.toLowerCase().trim();
+            if (!q) return true;
+            return (
+              l.title?.toLowerCase().includes(q) ||
+              l.description?.toLowerCase().includes(q) ||
+              l.category?.toLowerCase().includes(q) ||
+              l.condition?.toLowerCase().includes(q) ||
+              l.profiles?.full_name?.toLowerCase().includes(q)
+            );
+          });
+          return (
           <>
             <div className="page-header">
               <div>
@@ -502,28 +516,63 @@ export default function UniSwap() {
 
             {/* Search bar */}
             <div style={{ padding: "0 16px 16px" }}>
-              <div style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 14, padding: "13px 16px", display: "flex", gap: 10, alignItems: "center" }}>
-                <span style={{ color: C.muted }}>🔍</span>
-                <span style={{ color: C.muted, fontSize: 14 }}>Search listings…</span>
+              <div style={{ position: "relative" }}>
+                <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: searchFocused ? C.accent : C.muted, display: "flex", alignItems: "center", transition: "color .2s" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </div>
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  placeholder="Search listings, categories, sellers…"
+                  style={{ width: "100%", background: C.pill, border: `1.5px solid ${searchFocused ? C.accent : C.border}`, borderRadius: 14, padding: "13px 44px 13px 42px", color: C.text, fontSize: 14, outline: "none", boxSizing: "border-box", transition: "border-color .2s", boxShadow: searchFocused ? `0 0 0 3px ${C.accent}18` : "none" }}
+                />
+                {searchQuery && (
+                  <div onClick={() => setSearchQuery("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, background: C.border, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>✕</div>
+                )}
               </div>
+
+              {/* Search result count */}
+              {searchQuery.trim() && (
+                <div style={{ marginTop: 8, color: C.muted, fontSize: 13 }}>
+                  {filtered.length === 0 ? (
+                    <span style={{ color: "#FF5555" }}>No results for "<strong style={{ color: C.text }}>{searchQuery}</strong>"</span>
+                  ) : (
+                    <span><strong style={{ color: C.accent }}>{filtered.length}</strong> result{filtered.length !== 1 ? "s" : ""} for "<strong style={{ color: C.text }}>{searchQuery}</strong>"</span>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Category filter */}
-            <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 16px", scrollbarWidth: "none" }}>
-              {CATEGORIES.map(c => <Pill key={c} active={activeCat === c} onClick={() => setActiveCat(c)}>{c}</Pill>)}
-            </div>
+            {/* Category filter — hide when searching */}
+            {!searchQuery.trim() && (
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 16px", scrollbarWidth: "none" }}>
+                {CATEGORIES.map(c => <Pill key={c} active={activeCat === c} onClick={() => setActiveCat(c)}>{c}</Pill>)}
+              </div>
+            )}
 
             {/* Listings grid */}
             {listingsLoading ? <Loader /> : (
               <div className="listing-grid">
-                {listings.length === 0 && (
+                {filtered.length === 0 && (
                   <div style={{ gridColumn: "1/-1", textAlign: "center", color: C.muted, padding: "60px 20px" }}>
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>No listings yet</div>
-                    <div style={{ fontSize: 14, marginTop: 4 }}>Be the first to sell something! 🚀</div>
+                    {searchQuery.trim() ? (
+                      <>
+                        <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
+                        <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>No listings found</div>
+                        <div style={{ fontSize: 14, marginTop: 6 }}>Try a different keyword or <span style={{ color: C.accent, cursor: "pointer", fontWeight: 600 }} onClick={() => setSearchQuery("")}>clear search</span></div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>No listings yet</div>
+                        <div style={{ fontSize: 14, marginTop: 4 }}>Be the first to sell something! 🚀</div>
+                      </>
+                    )}
                   </div>
                 )}
-                {listings.map(l => {
+                {filtered.map(l => {
                   const imgs = getImages(l);
                   return (
                     <div key={l.id} className="listing-card" onClick={() => { setSelectedListing(l); setActivePhoto(0); }}>
@@ -546,7 +595,8 @@ export default function UniSwap() {
               </div>
             )}
           </>
-        )}
+          );
+        })()}
 
         {/* ─── LISTING DETAIL ─── */}
         {tab === "home" && selectedListing && (() => {
@@ -790,4 +840,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-            }
+                                                             }
