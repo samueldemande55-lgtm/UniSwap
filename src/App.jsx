@@ -47,7 +47,29 @@ const EyeIcon = ({ open }) => open ? (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
 );
 
-const TERMS = `1. Acceptance of Terms\nBy creating an account on UniSwap, you agree to be bound by these Terms of Use.\n\n2. Eligibility\nUniSwap is exclusively for students and staff with a valid campus email address.\n\n3. User Conduct\nYou agree not to post false, misleading, or fraudulent listings. All items must be legal and permitted on campus.\n\n4. Transactions\nUniSwap is a marketplace platform only. We do not process payments or guarantee transactions. Meet in safe, public campus locations.\n\n5. Account Termination\nWe reserve the right to suspend accounts that violate these terms or engage in fraudulent activity.\n\n6. Limitation of Liability\nUniSwap is not liable for any loss or dispute arising from transactions between users.\n\n7. Changes to Terms\nWe may update these terms at any time. Continued use constitutes acceptance.\n\nLast updated: February 2026`;
+const StarRating = ({ rating, size = 18, color = "#FFD700" }) => (
+  <div style={{ display: "flex", gap: 2 }}>
+    {[1,2,3,4,5].map(s => (
+      <svg key={s} width={size} height={size} viewBox="0 0 24 24" fill={s <= rating ? color : "none"} stroke={color} strokeWidth="1.5">
+        <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
+      </svg>
+    ))}
+  </div>
+);
+
+const InteractiveStars = ({ rating, hover, onRate, onHover, onLeave, size = 28 }) => (
+  <div style={{ display: "flex", gap: 6 }}>
+    {[1,2,3,4,5].map(s => (
+      <svg key={s} width={size} height={size} viewBox="0 0 24 24"
+        fill={s <= (hover || rating) ? "#FFD700" : "none"}
+        stroke={s <= (hover || rating) ? "#FFD700" : C.muted}
+        strokeWidth="1.5" style={{ cursor: "pointer", transition: "all .15s", transform: s <= (hover || rating) ? "scale(1.15)" : "scale(1)" }}
+        onClick={() => onRate(s)} onMouseEnter={() => onHover(s)} onMouseLeave={onLeave}>
+        <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
+      </svg>
+    ))}
+  </div>
+);
 const PRIVACY = `1. Information We Collect\nWe collect your full name, campus email, matric number, and information from your listings and messages.\n\n2. How We Use Your Information\nTo verify your campus identity, display your profile, and facilitate buying and selling.\n\n3. Data Sharing\nWe do not sell your personal data. Your info is only visible to users you interact with directly.\n\n4. Data Storage\nAll data is securely stored on Supabase with industry-standard encryption.\n\n5. Your Rights\nYou may request deletion of your account at any time via the Support section.\n\n6. Security\nWe take reasonable measures to protect your data. Use a strong, unique password.\n\n7. Contact\nFor privacy concerns, reach us via the Support section in the app.\n\nLast updated: February 2026`;
 
 const Modal = ({ type, onClose }) => {
@@ -65,6 +87,48 @@ const Modal = ({ type, onClose }) => {
         </div>
         <div style={{ padding: "14px 24px 20px", borderTop: `1px solid ${C.border}` }}>
           <Btn primary onClick={onClose}>Got it ✓</Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ReviewModal = ({ listing, rating, hover, text, onRate, onHover, onLeave, onTextChange, onSubmit, onClose, loading }) => {
+  const LABELS = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
+      <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 460, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>⭐ Rate this Seller</div>
+          <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted }}>✕</div>
+        </div>
+        {/* Listing info */}
+        <div style={{ padding: "16px 24px", background: C.pill, margin: "16px 24px 0", borderRadius: 14 }}>
+          <div style={{ color: C.muted, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Reviewing</div>
+          <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>{listing?.title}</div>
+          <div style={{ color: C.accent, fontWeight: 700, marginTop: 2 }}>₦{listing?.price?.toLocaleString()}</div>
+        </div>
+        {/* Stars */}
+        <div style={{ padding: "20px 24px 0", textAlign: "center" }}>
+          <div style={{ color: C.muted, fontSize: 13, marginBottom: 14 }}>How was your experience with this seller?</div>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <InteractiveStars rating={rating} hover={hover} onRate={onRate} onHover={onHover} onLeave={onLeave} size={36} />
+          </div>
+          <div style={{ height: 20, color: rating || hover ? "#FFD700" : "transparent", fontWeight: 700, fontSize: 14, transition: "all .2s" }}>
+            {LABELS[hover || rating]}
+          </div>
+        </div>
+        {/* Review text */}
+        <div style={{ padding: "12px 24px 20px" }}>
+          <textarea
+            value={text} onChange={e => onTextChange(e.target.value)}
+            placeholder="Share your experience — Was the item as described? How was pickup? Would you recommend this seller?"
+            style={{ width: "100%", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "13px 16px", color: C.text, fontSize: 14, height: 100, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }}
+          />
+          <div style={{ marginTop: 12 }}>
+            <Btn primary onClick={onSubmit}>{loading ? "Submitting…" : "Submit Review ⭐"}</Btn>
+          </div>
         </div>
       </div>
     </div>
@@ -191,6 +255,12 @@ export default function UniSwap() {
   const [myListingsLoading, setMyListingsLoading] = useState(false);
   const [myListingsTab, setMyListingsTab] = useState("active"); // active | sold
   const [profileTab, setProfileTab]     = useState("menu"); // menu | listings
+  const [reviewModal, setReviewModal]   = useState(null); // listing to review
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewHover, setReviewHover]   = useState(0);
+  const [reviewText, setReviewText]     = useState("");
+  const [sellerReviews, setSellerReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -330,6 +400,45 @@ export default function UniSwap() {
       fetchListings();
       showToast("Listing deleted.");
     } else { showToast("Failed to delete. Try again.", "error"); }
+  };
+
+  const fetchSellerReviews = async (sellerId) => {
+    setReviewsLoading(true);
+    try {
+      const { data } = await supabase
+        .from("reviews")
+        .select("*, profiles!reviewer_id(full_name)")
+        .eq("seller_id", sellerId)
+        .order("created_at", { ascending: false });
+      setSellerReviews(data || []);
+    } catch { setSellerReviews([]); }
+    finally { setReviewsLoading(false); }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewRating) return showToast("Please select a star rating", "error");
+    if (!reviewText.trim()) return showToast("Please write a short review", "error");
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("reviews").insert({
+        listing_id: reviewModal.id,
+        seller_id: reviewModal.seller_id,
+        reviewer_id: user.id,
+        rating: reviewRating,
+        comment: reviewText.trim(),
+      });
+      if (error) { showToast(error.message, "error"); return; }
+      // Recalculate seller average rating
+      const { data: allReviews } = await supabase
+        .from("reviews").select("rating").eq("seller_id", reviewModal.seller_id);
+      if (allReviews?.length) {
+        const avg = allReviews.reduce((s, r) => s + r.rating, 0) / allReviews.length;
+        await supabase.from("profiles").update({ rating: parseFloat(avg.toFixed(1)) }).eq("id", reviewModal.seller_id);
+      }
+      showToast("Review submitted! ⭐");
+      setReviewModal(null); setReviewRating(0); setReviewText("");
+    } catch { showToast("Failed to submit. Try again.", "error"); }
+    finally { setLoading(false); }
   };
 
   // ── Listings ───────────────────────────────────────────────────────────────
@@ -633,8 +742,16 @@ export default function UniSwap() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <Toast {...toast} />
       {modal && <Modal type={modal} onClose={() => setModal(null)} />}
-
-      {/* ── SIDEBAR ── */}
+      {reviewModal && (
+        <ReviewModal
+          listing={reviewModal}
+          rating={reviewRating} hover={reviewHover} text={reviewText}
+          onRate={setReviewRating} onHover={setReviewHover} onLeave={() => setReviewHover(0)}
+          onTextChange={setReviewText} onSubmit={handleSubmitReview}
+          onClose={() => { setReviewModal(null); setReviewRating(0); setReviewHover(0); setReviewText(""); }}
+          loading={loading}
+        />
+      )}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <span style={{ fontSize: 26 }}>🛒</span>
@@ -812,18 +929,48 @@ export default function UniSwap() {
                     <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>📦 {selectedListing.category}</div>
                     <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>🕐 {new Date(selectedListing.created_at).toLocaleDateString()}</div>
                   </div>
-                  <div style={{ marginTop: 20, padding: 16, background: C.pill, borderRadius: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ marginTop: 20, padding: 16, background: C.pill, borderRadius: 16, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}
+                    onClick={() => { fetchSellerReviews(selectedListing.seller_id); }}>
                     <Avatar initials={(selectedListing.profiles?.full_name || "??").slice(0, 2).toUpperCase()} size={46} />
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>{selectedListing.profiles?.full_name || "Unknown"}</div>
                       <div style={{ color: C.green, fontSize: 12, marginTop: 2 }}>✓ Campus verified seller</div>
+                      {selectedListing.profiles?.rating > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                          <StarRating rating={Math.round(selectedListing.profiles.rating)} size={14} />
+                          <span style={{ color: C.muted, fontSize: 12 }}>{selectedListing.profiles.rating.toFixed(1)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {selectedListing.description && <div style={{ marginTop: 16, color: C.muted, fontSize: 14, lineHeight: 1.8, paddingBottom: 20 }}>{selectedListing.description}</div>}
+                  {selectedListing.description && <div style={{ marginTop: 16, color: C.muted, fontSize: 14, lineHeight: 1.8 }}>{selectedListing.description}</div>}
+
+                  {/* Reviews section */}
+                  {sellerReviews.length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 12 }}>⭐ Seller Reviews ({sellerReviews.length})</div>
+                      {reviewsLoading ? <Loader /> : sellerReviews.map(r => (
+                        <div key={r.id} style={{ background: C.pill, borderRadius: 14, padding: "14px 16px", marginBottom: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={28} />
+                              <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</span>
+                            </div>
+                            <StarRating rating={r.rating} size={13} />
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{r.comment}</div>
+                          <div style={{ color: C.border, fontSize: 11, marginTop: 6 }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "16px 20px 28px", background: C.card, borderTop: `1px solid ${C.border}`, display: "flex", gap: 12 }}>
-                {selectedListing.seller_id !== user?.id && <Btn style={{ flex: 1 }} onClick={() => startChat(selectedListing)}>💬 Message Seller</Btn>}
+                {selectedListing.seller_id !== user?.id && <>
+                  <Btn style={{ flex: 1 }} onClick={() => startChat(selectedListing)}>💬 Message</Btn>
+                  <Btn style={{ flex: 1 }} onClick={() => setReviewModal(selectedListing)}>⭐ Rate</Btn>
+                </>}
                 <Btn primary style={{ flex: 1 }}>Buy Now</Btn>
               </div>
             </div>
@@ -996,10 +1143,10 @@ export default function UniSwap() {
                 </div>
               </div>
 
-              {/* Tab switcher: Menu / My Listings */}
+              {/* Tab switcher: Menu / My Listings / Reviews */}
               <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
-                {[["menu", "⚙️ Account"], ["listings", "📦 My Listings"]].map(([id, label]) => (
-                  <div key={id} onClick={() => setProfileTab(id)} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
+                {[["menu", "⚙️ Account"], ["listings", "📦 Listings"], ["reviews", "⭐ Reviews"]].map(([id, label]) => (
+                  <div key={id} onClick={() => { setProfileTab(id); if (id === "reviews") fetchSellerReviews(user.id); }} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
                 ))}
               </div>
 
@@ -1079,6 +1226,61 @@ export default function UniSwap() {
                 </>
               )}
 
+              {/* ── REVIEWS TAB ── */}
+              {profileTab === "reviews" && (
+                <>
+                  {reviewsLoading ? <Loader /> : sellerReviews.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "48px 20px", color: C.muted }}>
+                      <div style={{ fontSize: 44, marginBottom: 12 }}>⭐</div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>No reviews yet</div>
+                      <div style={{ fontSize: 13, marginTop: 6 }}>Reviews appear here after buyers rate you.</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {/* Average summary */}
+                      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px", textAlign: "center", marginBottom: 4 }}>
+                        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 48, fontWeight: 800, color: "#FFD700" }}>
+                          {(sellerReviews.reduce((s, r) => s + r.rating, 0) / sellerReviews.length).toFixed(1)}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "center", margin: "8px 0" }}>
+                          <StarRating rating={Math.round(sellerReviews.reduce((s, r) => s + r.rating, 0) / sellerReviews.length)} size={22} />
+                        </div>
+                        <div style={{ color: C.muted, fontSize: 13 }}>Based on {sellerReviews.length} review{sellerReviews.length !== 1 ? "s" : ""}</div>
+                        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {[5,4,3,2,1].map(star => {
+                            const count = sellerReviews.filter(r => r.rating === star).length;
+                            const pct = sellerReviews.length ? (count / sellerReviews.length) * 100 : 0;
+                            return (
+                              <div key={star} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <span style={{ color: C.muted, fontSize: 12, width: 12 }}>{star}</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="1"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+                                <div style={{ flex: 1, background: C.pill, borderRadius: 4, height: 6, overflow: "hidden" }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", background: "#FFD700", borderRadius: 4, transition: "width .4s" }} />
+                                </div>
+                                <span style={{ color: C.muted, fontSize: 12, width: 16 }}>{count}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {sellerReviews.map(r => (
+                        <div key={r.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 18px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={32} />
+                              <span style={{ color: C.text, fontWeight: 600, fontSize: 14 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</span>
+                            </div>
+                            <StarRating rating={r.rating} size={14} />
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>{r.comment}</div>
+                          <div style={{ color: C.border, fontSize: 11, marginTop: 8 }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
             </div>
           </div>
         )}
@@ -1097,4 +1299,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                       }
+    }
