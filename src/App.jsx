@@ -261,6 +261,9 @@ export default function UniSwap() {
   const [reviewText, setReviewText]     = useState("");
   const [sellerReviews, setSellerReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [editName, setEditName]         = useState("");
+  const [editMatric, setEditMatric]     = useState("");
+  const [editBio, setEditBio]           = useState("");
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -400,6 +403,29 @@ export default function UniSwap() {
       fetchListings();
       showToast("Listing deleted.");
     } else { showToast("Failed to delete. Try again.", "error"); }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editName.trim()) return showToast("Name cannot be empty", "error");
+    if (newPassword || newPasswordConfirm) {
+      if (newPassword.length < 6) return showToast("Password must be at least 6 characters", "error");
+      if (newPassword !== newPasswordConfirm) return showToast("Passwords do not match", "error");
+    }
+    setLoading(true);
+    try {
+      const updates = { full_name: editName.trim(), matric_number: editMatric.trim(), bio: editBio.trim() };
+      const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
+      if (error) { showToast(error.message, "error"); return; }
+      if (newPassword) {
+        const { error: pwErr } = await supabase.auth.updateUser({ password: newPassword });
+        if (pwErr) { showToast(pwErr.message, "error"); return; }
+      }
+      setProfile(p => ({ ...p, ...updates }));
+      setNewPassword(""); setNewPasswordConfirm("");
+      showToast(newPassword ? "Profile & password updated! ✅" : "Profile updated! ✅");
+      setProfileTab("menu");
+    } catch { showToast("Failed to update. Try again.", "error"); }
+    finally { setLoading(false); }
   };
 
   const fetchSellerReviews = async (sellerId) => {
@@ -731,7 +757,7 @@ export default function UniSwap() {
     { id: "home",     icon: "🏠", label: "Home" },
     { id: "messages", icon: "💬", label: "Messages" },
     { id: "sell",     icon: "➕", label: "Sell" },
-    { id: "profile",  icon: "👤", label: "Profile" },
+    { id: "profile",  icon: "👤", label: "Account" },
   ];
 
   const handleTabChange = (id) => { setTab(id); setSelectedListing(null); setSelectedChat(null); };
@@ -1112,7 +1138,7 @@ export default function UniSwap() {
         {/* ─── PROFILE ─── */}
         {tab === "profile" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <div className="page-header"><div className="page-title">Profile</div></div>
+            <div className="page-header"><div className="page-title">Account</div></div>
             <div className="form-page">
 
               {/* Profile card */}
@@ -1141,21 +1167,100 @@ export default function UniSwap() {
                 <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                   <div style={{ background: `${C.green}22`, color: C.green, padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>✓ Campus Verified</div>
                 </div>
+                {profile?.bio && <div style={{ color: C.muted, fontSize: 13, marginTop: 14, lineHeight: 1.6, textAlign: "left" }}>{profile.bio}</div>}
               </div>
 
-              {/* Tab switcher: Menu / My Listings / Reviews */}
-              <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
-                {[["menu", "⚙️ Account"], ["listings", "📦 Listings"], ["reviews", "⭐ Reviews"]].map(([id, label]) => (
-                  <div key={id} onClick={() => { setProfileTab(id); if (id === "reviews") fetchSellerReviews(user.id); }} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
-                ))}
-              </div>
+              {/* Tab switcher — hidden when in edit mode */}
+              {profileTab !== "edit" && (
+                <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
+                  {[["menu", "⚙️ Account"], ["listings", "📦 Listings"], ["reviews", "⭐ Reviews"]].map(([id, label]) => (
+                    <div key={id} onClick={() => { setProfileTab(id); if (id === "reviews") fetchSellerReviews(user.id); }} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
+                  ))}
+                </div>
+              )}
 
-              {/* ── ACCOUNT MENU ── */}
+              {/* ── EDIT PROFILE ── */}
+              {profileTab === "edit" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0 }}>←</div>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Edit Profile</div>
+                  </div>
+
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Full Name</div>
+                      <Input placeholder="Your full name" value={editName} onChange={e => setEditName(e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>School Email</div>
+                      <Input value={profile?.email || user?.email || ""} disabled style={{ opacity: 0.5, cursor: "not-allowed" }} />
+                      <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Email cannot be changed</div>
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Matric Number</div>
+                      <Input placeholder="Your matric number" value={editMatric} onChange={e => setEditMatric(e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Bio</div>
+                      <textarea
+                        placeholder="Tell buyers about yourself — department, year, what you usually sell…"
+                        value={editBio} onChange={e => setEditBio(e.target.value)}
+                        style={{ width: "100%", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "13px 16px", color: C.text, fontSize: 14, height: 90, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Change Password */}
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontWeight: 700, fontSize: 15 }}>🔐 Change Password</div>
+                      <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Leave blank to keep your current password.</div>
+                    </div>
+                    <div style={{ height: 1, background: C.border }} />
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>New Password</div>
+                      <div style={{ position: "relative" }}>
+                        <Input type={showPassword ? "text" : "password"} placeholder="Enter new password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                        <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+                      </div>
+                      {/* Strength meter */}
+                      {newPassword.length > 0 && (
+                        <div style={{ marginTop: 8, background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
+                          <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                            {[6, 8, 10, 12].map(len => (
+                              <div key={len} style={{ flex: 1, height: 4, borderRadius: 2, background: newPassword.length >= len ? (len >= 10 ? C.green : len >= 8 ? C.accent : C.warm) : C.border, transition: "background .2s" }} />
+                            ))}
+                          </div>
+                          <div style={{ fontSize: 11, color: newPassword.length < 6 ? C.warm : newPassword.length < 10 ? C.accent : C.green, fontWeight: 600 }}>
+                            {newPassword.length < 6 ? "Too short — min 6 characters" : newPassword.length < 8 ? "Weak" : newPassword.length < 10 ? "Good" : "Strong ✓"}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Confirm New Password</div>
+                      <div style={{ position: "relative" }}>
+                        <Input type={showPassword ? "text" : "password"} placeholder="Repeat new password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} style={{ paddingRight: 48, borderColor: newPasswordConfirm.length > 0 ? (newPassword === newPasswordConfirm ? C.green : "#FF5555") : C.border }} />
+                        <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+                      </div>
+                      {newPasswordConfirm.length > 0 && (
+                        <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: newPassword === newPasswordConfirm ? C.green : "#FF5555", display: "flex", alignItems: "center", gap: 4 }}>
+                          {newPassword === newPasswordConfirm ? "✓ Passwords match" : "✕ Passwords do not match"}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Btn primary onClick={handleUpdateProfile}>{loading ? "Saving…" : "Save Changes ✓"}</Btn>
+                  <Btn onClick={() => setProfileTab("menu")}>Cancel</Btn>
+                </div>
+              )}
               {profileTab === "menu" && (
                 <>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
-                    {[["🛒","Purchases"],["❤️","Saved Items"],["⭐","Reviews"],["🔔","Notifications"],["⚙️","Settings"],["🆘","Support"]].map(([icon, label], i, arr) => (
-                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    {[["👤","Profile"],["🛒","Purchases"],["❤️","Saved Items"],["🔔","Notifications"],["⚙️","Settings"],["🆘","Support"]].map(([icon, label], i, arr) => (
+                      <div key={label} onClick={() => { if (label === "Profile") { setEditName(profile?.full_name || ""); setEditMatric(profile?.matric_number || ""); setEditBio(profile?.bio || ""); setProfileTab("edit"); } }} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                         <span style={{ fontSize: 20, width: 28 }}>{icon}</span>
                         <span style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>{label}</span>
                         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</span>
@@ -1299,4 +1404,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-    }
+               }
