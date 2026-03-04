@@ -264,6 +264,12 @@ export default function UniSwap() {
   const [editName, setEditName]         = useState("");
   const [editMatric, setEditMatric]     = useState("");
   const [editBio, setEditBio]           = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [savedItems, setSavedItems]     = useState({});
+  const [purchases, setPurchases]       = useState([]);
+  const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifPermission, setNotifPermission] = useState("default");
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -407,25 +413,98 @@ export default function UniSwap() {
 
   const handleUpdateProfile = async () => {
     if (!editName.trim()) return showToast("Name cannot be empty", "error");
-    if (newPassword || newPasswordConfirm) {
-      if (newPassword.length < 6) return showToast("Password must be at least 6 characters", "error");
+    if (newPassword || newPasswordConfirm || currentPassword) {
+      if (!currentPassword) return showToast("Enter your current password to change it", "error");
+      if (newPassword.length < 6) return showToast("New password must be at least 6 characters", "error");
       if (newPassword !== newPasswordConfirm) return showToast("Passwords do not match", "error");
     }
     setLoading(true);
     try {
+      // Update bio data
       const updates = { full_name: editName.trim(), matric_number: editMatric.trim(), bio: editBio.trim() };
       const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
       if (error) { showToast(error.message, "error"); return; }
+      setProfile(p => ({ ...p, ...updates }));
+      // Update password — re-auth first with current password
       if (newPassword) {
+        const userEmail = profile?.email || user?.email;
+        const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email: userEmail, password: currentPassword });
+        if (reAuthErr) { showToast("Current password is incorrect", "error"); return; }
         const { error: pwErr } = await supabase.auth.updateUser({ password: newPassword });
         if (pwErr) { showToast(pwErr.message, "error"); return; }
+        setCurrentPassword(""); setNewPassword(""); setNewPasswordConfirm("");
       }
-      setProfile(p => ({ ...p, ...updates }));
-      setNewPassword(""); setNewPasswordConfirm("");
       showToast(newPassword ? "Profile & password updated! ✅" : "Profile updated! ✅");
       setProfileTab("menu");
     } catch { showToast("Failed to update. Try again.", "error"); }
     finally { setLoading(false); }
+  };
+
+  const fetchPurchases = async () => {
+    setPurchasesLoading(true);
+    try {
+      // Purchases = listings the user has messaged about (as buyer)
+      const { data: msgs } = await supabase
+        .from("messages")
+        .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold, profiles(full_name))")
+        .eq("sender_id", user.id)
+        .order("created_at", { ascending: false });
+      // Deduplicate by listing_id
+      const seen = {};
+      const unique = (msgs || []).filter(m => {
+        if (!m.listings || seen[m.listing_id]) return false;
+        seen[m.listing_id] = true; return true;
+      });
+      setPurchases(unique.map(m => m.listings));
+    } catch { setPurchases([]); }
+    finally { setPurchasesLoading(false); }
+  };
+
+  // Saved items — persisted in localStorage for instant access
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("uniswap_saved") || "{}");
+      setSavedItems(stored);
+    } catch { setSavedItems({}); }
+  }, []);
+
+  const toggleSaved = (listing) => {
+    setSavedItems(prev => {
+      const next = { ...prev };
+      if (next[listing.id]) { delete next[listing.id]; }
+      else { next[listing.id] = listing; }
+      try { localStorage.setItem("uniswap_saved", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  // Notification permission
+  useEffect(() => {
+    if ("Notification" in window) {
+      setNotifPermission(Notification.permission);
+      setNotifEnabled(Notification.permission === "granted");
+    }
+  }, []);
+
+  const handleToggleNotifications = async () => {
+    if (!("Notification" in window)) return showToast("Notifications not supported on this browser", "error");
+    if (notifPermission === "denied") {
+      showToast("Notifications blocked. Enable in browser settings.", "error"); return;
+    }
+    if (!notifEnabled) {
+      const result = await Notification.requestPermission();
+      setNotifPermission(result);
+      if (result === "granted") {
+        setNotifEnabled(true);
+        new Notification("UniSwap notifications enabled 🔔", { body: "You'll now get alerts for new messages and activity.", icon: "/favicon.ico" });
+        showToast("Notifications enabled! 🔔");
+      } else {
+        showToast("Permission denied by browser", "error");
+      }
+    } else {
+      setNotifEnabled(false);
+      showToast("Notifications turned off");
+    }
   };
 
   const fetchSellerReviews = async (sellerId) => {
@@ -891,7 +970,7 @@ export default function UniSwap() {
                       <div style={{ height: 140, background: C.pill, position: "relative", overflow: "hidden" }}>
                         {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>📦</div>}
                         <div style={{ position: "absolute", top: 8, left: 8, background: `${C.bg}DD`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: C.muted, fontWeight: 600 }}>{l.condition}</div>
-                        <div onClick={e => { e.stopPropagation(); setLiked(p => ({ ...p, [l.id]: !p[l.id] })); }} style={{ position: "absolute", top: 8, right: 8, background: `${C.bg}DD`, borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, cursor: "pointer" }}>{liked[l.id] ? "❤️" : "🤍"}</div>
+                        <div onClick={e => { e.stopPropagation(); toggleSaved(l); }} style={{ position: "absolute", top: 8, right: 8, background: `${C.bg}DD`, borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, cursor: "pointer" }}>{savedItems[l.id] ? "❤️" : "🤍"}</div>
                       </div>
                       <div style={{ padding: "12px 14px 14px" }}>
                         <div style={{ color: C.text, fontSize: 13, fontWeight: 700, lineHeight: 1.4, marginBottom: 6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{l.title}</div>
@@ -918,7 +997,7 @@ export default function UniSwap() {
               <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card }}>
                 <div onClick={() => { setSelectedListing(null); setActivePhoto(0); }} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%" }}>←</div>
                 <span style={{ color: C.text, fontWeight: 700, fontSize: 16 }}>Listing Detail</span>
-                <div onClick={e => { e.stopPropagation(); setLiked(p => ({ ...p, [selectedListing.id]: !p[selectedListing.id] })); }} style={{ marginLeft: "auto", fontSize: 22, cursor: "pointer" }}>{liked[selectedListing.id] ? "❤️" : "🤍"}</div>
+                <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }} style={{ marginLeft: "auto", fontSize: 22, cursor: "pointer" }}>{savedItems[selectedListing.id] ? "❤️" : "🤍"}</div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
                 {/* Photo gallery */}
@@ -1218,6 +1297,19 @@ export default function UniSwap() {
                       <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Leave blank to keep your current password.</div>
                     </div>
                     <div style={{ height: 1, background: C.border }} />
+
+                    {/* Current password */}
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Current Password</div>
+                      <div style={{ position: "relative" }}>
+                        <Input type={showPassword ? "text" : "password"} placeholder="Enter your current password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                        <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+                      </div>
+                    </div>
+
+                    <div style={{ height: 1, background: `${C.border}88` }} />
+
+                    {/* New password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>New Password</div>
                       <div style={{ position: "relative" }}>
@@ -1238,6 +1330,8 @@ export default function UniSwap() {
                         </div>
                       )}
                     </div>
+
+                    {/* Confirm password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Confirm New Password</div>
                       <div style={{ position: "relative" }}>
@@ -1259,16 +1353,171 @@ export default function UniSwap() {
               {profileTab === "menu" && (
                 <>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
-                    {[["👤","Profile"],["🛒","Purchases"],["❤️","Saved Items"],["🔔","Notifications"],["⚙️","Settings"],["🆘","Support"]].map(([icon, label], i, arr) => (
-                      <div key={label} onClick={() => { if (label === "Profile") { setEditName(profile?.full_name || ""); setEditMatric(profile?.matric_number || ""); setEditBio(profile?.bio || ""); setProfileTab("edit"); } }} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    {[
+                      ["👤", "Profile", "edit"],
+                      ["🛒", "Purchases", "purchases"],
+                      ["❤️", "Saved Items", "saved"],
+                      ["⚙️", "Settings", "settings"],
+                      ["🆘", "Support", "support"],
+                    ].map(([icon, label, target], i, arr) => (
+                      <div key={label} onClick={() => {
+                        if (target === "edit") { setEditName(profile?.full_name || ""); setEditMatric(profile?.matric_number || ""); setEditBio(profile?.bio || ""); setCurrentPassword(""); setNewPassword(""); setNewPasswordConfirm(""); }
+                        if (target === "purchases") fetchPurchases();
+                        setProfileTab(target);
+                      }} style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                         <span style={{ fontSize: 20, width: 28 }}>{icon}</span>
                         <span style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>{label}</span>
+                        {label === "Saved Items" && Object.keys(savedItems).length > 0 && (
+                          <span style={{ background: C.accent, color: "#000", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, marginLeft: 2 }}>{Object.keys(savedItems).length}</span>
+                        )}
                         <span style={{ marginLeft: "auto", color: C.muted, fontSize: 18 }}>›</span>
                       </div>
                     ))}
                   </div>
                   <Btn danger onClick={handleSignOut}>Sign Out</Btn>
                 </>
+              )}
+
+              {/* ── PURCHASES ── */}
+              {profileTab === "purchases" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Purchases</div>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 13, marginBottom: 4 }}>Items you've messaged sellers about.</div>
+                  {purchasesLoading ? <Loader /> : purchases.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                      <div style={{ fontSize: 44, marginBottom: 12 }}>🛒</div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>No purchases yet</div>
+                      <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Items you contact sellers about will appear here.</div>
+                    </div>
+                  ) : purchases.map(l => {
+                    const imgs = getImages(l);
+                    return (
+                      <div key={l.id} onClick={() => { setSelectedListing(l); setActivePhoto(0); setTab("home"); setProfileTab("menu"); }} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", display: "flex", cursor: "pointer" }}>
+                        <div style={{ width: 80, flexShrink: 0, background: C.pill }}>
+                          {imgs[0] ? <img src={imgs[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>📦</div>}
+                        </div>
+                        <div style={{ padding: "14px 16px", flex: 1, minWidth: 0 }}>
+                          <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
+                          <div style={{ color: C.accent, fontWeight: 800, fontSize: 15, marginTop: 2 }}>₦{l.price?.toLocaleString()}</div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+                            <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "2px 8px", borderRadius: 8 }}>{l.category}</span>
+                            <span style={{ fontSize: 11, color: l.is_sold ? C.green : C.accent, fontWeight: 600 }}>{l.is_sold ? "✓ Sold" : "● Available"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── SAVED ITEMS ── */}
+              {profileTab === "saved" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Saved Items</div>
+                  </div>
+                  {Object.values(savedItems).length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "48px 20px" }}>
+                      <div style={{ fontSize: 44, marginBottom: 12 }}>❤️</div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>No saved items yet</div>
+                      <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Tap the ❤️ on any listing to save it here.</div>
+                    </div>
+                  ) : Object.values(savedItems).map(l => {
+                    const imgs = getImages(l);
+                    return (
+                      <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", display: "flex", cursor: "pointer" }} onClick={() => { setSelectedListing(l); setActivePhoto(0); setTab("home"); setProfileTab("menu"); }}>
+                        <div style={{ width: 80, flexShrink: 0, background: C.pill }}>
+                          {imgs[0] ? <img src={imgs[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>📦</div>}
+                        </div>
+                        <div style={{ padding: "14px 16px", flex: 1, minWidth: 0 }}>
+                          <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
+                          <div style={{ color: C.accent, fontWeight: 800, fontSize: 15, marginTop: 2 }}>₦{l.price?.toLocaleString()}</div>
+                          <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "2px 8px", borderRadius: 8 }}>{l.category}</span>
+                            <span onClick={e => { e.stopPropagation(); toggleSaved(l); }} style={{ color: "#FF5555", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Remove ✕</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── SETTINGS ── */}
+              {profileTab === "settings" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Settings</div>
+                  </div>
+
+                  {/* Notifications section */}
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
+                      <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Notifications</div>
+                    </div>
+                    {/* Push notifications toggle */}
+                    <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>Push Notifications</div>
+                        <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
+                          {notifPermission === "denied" ? "Blocked by browser — change in browser settings" : notifEnabled ? "You'll receive alerts for messages and activity" : "Allow UniSwap to send you pop-up alerts"}
+                        </div>
+                      </div>
+                      {/* Toggle switch */}
+                      <div onClick={handleToggleNotifications} style={{ width: 50, height: 28, borderRadius: 14, background: notifEnabled ? C.accent : C.border, position: "relative", cursor: notifPermission === "denied" ? "not-allowed" : "pointer", transition: "background .25s", flexShrink: 0, opacity: notifPermission === "denied" ? 0.5 : 1 }}>
+                        <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
+                      </div>
+                    </div>
+                    {/* Message notifications toggle */}
+                    <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, borderTop: `1px solid ${C.border}22` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>New Message Alerts</div>
+                        <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Pop-up when a buyer or seller messages you</div>
+                      </div>
+                      <div onClick={notifEnabled ? handleToggleNotifications : undefined} style={{ width: 50, height: 28, borderRadius: 14, background: notifEnabled ? C.accent : C.border, position: "relative", cursor: notifEnabled ? "pointer" : "not-allowed", transition: "background .25s", flexShrink: 0, opacity: notifEnabled ? 1 : 0.4 }}>
+                        <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Appearance section */}
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
+                      <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>About</div>
+                    </div>
+                    <div style={{ padding: "16px 20px" }}>
+                      <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>UniSwap</div>
+                      <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Campus marketplace · v1.0.0</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SUPPORT ── */}
+              {profileTab === "support" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Support</div>
+                  </div>
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
+                    {[["Report a listing","Flag inappropriate or fraudulent content"],["Account issues","Login problems, account recovery"],["Transaction dispute","Issues with a buyer or seller"],["Suggest a feature","Help us improve UniSwap"]].map(([title, sub], i, arr) => (
+                      <div key={title} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{title}</div>
+                        <div style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16, textAlign: "center" }}>
+                    <div style={{ color: C.muted, fontSize: 13 }}>Need urgent help? Email us at</div>
+                    <div style={{ color: C.accent, fontWeight: 700, fontSize: 14, marginTop: 4 }}>support@uniswap.campus</div>
+                  </div>
+                </div>
               )}
 
               {/* ── MY LISTINGS DASHBOARD ── */}
@@ -1404,4 +1653,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-               }
+        }
