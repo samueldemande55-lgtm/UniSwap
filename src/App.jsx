@@ -467,25 +467,54 @@ export default function UniSwap() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const ensureProfileRow = async (uid, extra = {}) => {
-    // Upsert a minimal profile row — safe to call even if the row already exists
-    const base = { id: uid, full_name: extra.full_name || "User", email: extra.email || "", matric_number: extra.matric_number || "", rating: 0, ...extra };
-    await supabase.from("profiles").upsert(base, { onConflict: "id" });
+  // ── Profile helpers ──────────────────────────────────────────────────────────
+  // Primary store: Supabase Auth user_metadata (always available, no table needed)
+  // Secondary store: profiles table (best-effort, used when it exists)
+
+  const isTableError = (msg = "") =>
+    msg.includes("schema cache") ||
+    msg.includes("does not exist") ||
+    msg.includes("relation") ||
+    msg.includes("PGRST");
+
+  const syncProfileTable = async (uid, data) => {
+    // Fire-and-forget — never blocks the UI save
+    try {
+      await supabase.from("profiles").upsert(
+        { id: uid, ...data },
+        { onConflict: "id" }
+      );
+    } catch (_) { /* table may not exist yet — that's OK */ }
   };
 
   const fetchProfile = async (uid) => {
     try {
+      // 1️⃣ Try the profiles table first
       const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
-      if (error) {
-        // Row missing (PGRST116) or schema cache issue — create the row and use defaults
-        const fallback = { full_name: "User", email: "", matric_number: "", rating: 0 };
-        await ensureProfileRow(uid, fallback).catch(() => {});
-        setProfile({ id: uid, ...fallback });
+      if (!error && data) {
+        setProfile(data);
+        if (data.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
         return;
       }
-      setProfile(data || { full_name: "User", email: "", matric_number: "", rating: 0 });
-      if (data?.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
-    } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
+      // 2️⃣ Fall back to auth user_metadata
+      const { data: authData } = await supabase.auth.getUser();
+      const meta = authData?.user?.user_metadata || {};
+      const fallback = {
+        id: uid,
+        full_name: meta.full_name || authData?.user?.email?.split("@")[0] || "User",
+        email: authData?.user?.email || "",
+        matric_number: meta.matric_number || "",
+        bio: meta.bio || "",
+        rating: meta.rating || 0,
+        avatar_url: meta.avatar_url || "",
+      };
+      setProfile(fallback);
+      if (fallback.avatar_url) setAvatarUrl(fallback.avatar_url + `?t=${Date.now()}`);
+      // 3️⃣ Best-effort: seed the profiles table if it exists
+      syncProfileTable(uid, fallback);
+    } catch {
+      setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
+    }
   };
 
   const handleSignUp = async () => {
@@ -497,8 +526,11 @@ export default function UniSwap() {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) { showToast(error.message, "error"); return; }
       if (data?.user) {
-        await supabase.from("profiles").upsert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 }, { onConflict: "id" });
-        setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
+        const meta = { full_name: fullName, email, matric_number: matric, rating: 0 };
+        // Save to auth metadata (always works) + best-effort profiles table
+        await supabase.auth.updateUser({ data: meta }).catch(() => {});
+        syncProfileTable(data.user.id, meta);
+        setProfile(meta);
         showToast("Account created! Welcome 🎉");
       }
     } catch { showToast("Connection error. Try again.", "error"); }
@@ -592,26 +624,26 @@ export default function UniSwap() {
     }
     setLoading(true);
     try {
-      const updates = {
-        id: user.id,
+      const meta = {
         full_name: editName.trim(),
         matric_number: editMatric.trim(),
         bio: editBio.trim(),
         email: profile?.email || user?.email || "",
         rating: profile?.rating || 0,
+        avatar_url: profile?.avatar_url || "",
       };
-      // upsert handles both "table missing row" and normal update cases
-      const { error } = await supabase.from("profiles").upsert(updates, { onConflict: "id" });
-      if (error) {
-        const msg = error.message || "";
-        if (msg.includes("schema cache") || msg.includes("does not exist")) {
-          showToast("Database not ready. Please wait a moment and try again.", "error");
-        } else {
-          showToast(msg || "Failed to save. Try again.", "error");
-        }
-        return;
-      }
-      setProfile(p => ({ ...p, ...updates }));
+
+      // ✅ PRIMARY: Save to Supabase Auth user_metadata — always works, no table needed
+      const { error: metaErr } = await supabase.auth.updateUser({ data: meta });
+      if (metaErr) { showToast(metaErr.message || "Failed to save. Try again.", "error"); return; }
+
+      // ✅ Update local state immediately
+      setProfile(p => ({ ...p, ...meta }));
+
+      // 🔄 SECONDARY: Sync to profiles table best-effort (silent if table missing)
+      syncProfileTable(user.id, meta);
+
+      // 🔐 Handle password change if requested
       if (newPassword) {
         const userEmail = profile?.email || user?.email;
         const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email: userEmail, password: currentPassword });
@@ -620,15 +652,11 @@ export default function UniSwap() {
         if (pwErr) { showToast(pwErr.message, "error"); return; }
         setCurrentPassword(""); setNewPassword(""); setNewPasswordConfirm("");
       }
+
       showToast(newPassword ? "Profile & password updated! ✅" : "Profile updated! ✅");
       setProfileTab("menu");
     } catch (e) {
-      const msg = e?.message || "";
-      if (msg.includes("schema cache") || msg.includes("does not exist")) {
-        showToast("Database not ready. Please refresh and try again.", "error");
-      } else {
-        showToast("Failed to update. Try again.", "error");
-      }
+      showToast("Failed to update. Try again.", "error");
     }
     finally { setLoading(false); }
   };
@@ -647,7 +675,10 @@ export default function UniSwap() {
       if (uploadErr) { showToast("Upload failed: " + uploadErr.message, "error"); return; }
       const { data: { publicUrl } } = supabase.storage.from("listings").getPublicUrl(path);
       const url = `${publicUrl}?t=${Date.now()}`;
-      await supabase.from("profiles").upsert({ id: user.id, avatar_url: publicUrl, email: profile?.email || user?.email || "", full_name: profile?.full_name || "User", rating: profile?.rating || 0 }, { onConflict: "id" });
+      // Save avatar to auth metadata (primary) + profiles table (secondary)
+      const avatarMeta = { ...( profile || {}), avatar_url: publicUrl, id: user.id };
+      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } }).catch(() => {});
+      syncProfileTable(user.id, avatarMeta);
       setAvatarUrl(url);
       setProfile(p => ({ ...p, avatar_url: publicUrl }));
       showToast("Profile picture updated! ✅");
@@ -2004,4 +2035,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-          }
+            }
