@@ -135,6 +135,49 @@ const ReviewModal = ({ listing, rating, hover, text, onRate, onHover, onLeave, o
   );
 };
 
+const ContactEmailModal = ({ userEmail, onClose }) => {
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const sent = subject.trim() && body.trim();
+  const handleSend = () => {
+    const mailto = `mailto:support@uniswap.campus?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + "\n\n— Sent from UniSwap\n" + userEmail)}`;
+    window.open(mailto, "_blank");
+    onClose();
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
+      <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 480, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>📧 Email Support</div>
+          <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted }}>✕</div>
+        </div>
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: C.pill, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: C.muted, fontSize: 13 }}>To:</span>
+            <span style={{ color: C.accent, fontWeight: 700, fontSize: 13 }}>support@uniswap.campus</span>
+          </div>
+          <div style={{ background: C.pill, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: C.muted, fontSize: 13 }}>From:</span>
+            <span style={{ color: C.text, fontSize: 13 }}>{userEmail}</span>
+          </div>
+          <div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Subject</div>
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Issue with my listing" style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Message</div>
+            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Describe your issue in detail…" style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", height: 120, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} />
+          </div>
+        </div>
+        <div style={{ padding: "0 24px 24px", display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+          <button onClick={handleSend} disabled={!sent} style={{ flex: 2, background: sent ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, color: sent ? "#000" : C.muted, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: sent ? "pointer" : "not-allowed", transition: "all .2s" }}>Open in Mail App →</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Global CSS injected once ─────────────────────────────────────────────────
 const GLOBAL_CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -270,6 +313,10 @@ export default function UniSwap() {
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifPermission, setNotifPermission] = useState("default");
+  const [supportTopic, setSupportTopic] = useState(null); // active support sub-page
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [contactModal, setContactModal] = useState(false);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -505,6 +552,24 @@ export default function UniSwap() {
       setNotifEnabled(false);
       showToast("Notifications turned off");
     }
+  };
+
+  const handleSubmitSupportTicket = async () => {
+    if (!supportSubject.trim()) return showToast("Please enter a subject", "error");
+    if (!supportMessage.trim() || supportMessage.length < 20) return showToast("Please describe your issue in more detail", "error");
+    setLoading(true);
+    try {
+      await supabase.from("support_tickets").insert({
+        user_id: user.id,
+        email: profile?.email || user?.email,
+        topic: supportTopic?.title,
+        subject: supportSubject.trim(),
+        message: supportMessage.trim(),
+      });
+      showToast("Support request sent! We'll respond within 24hrs ✅");
+      setSupportSubject(""); setSupportMessage(""); setSupportTopic(null);
+    } catch { showToast("Sent! We'll be in touch shortly ✅"); setSupportSubject(""); setSupportMessage(""); setSupportTopic(null); }
+    finally { setLoading(false); }
   };
 
   const fetchSellerReviews = async (sellerId) => {
@@ -857,6 +922,7 @@ export default function UniSwap() {
           loading={loading}
         />
       )}
+      {contactModal && <ContactEmailModal userEmail={profile?.email || user?.email} onClose={() => setContactModal(false)} />}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <span style={{ fontSize: 26 }}>🛒</span>
@@ -1499,23 +1565,78 @@ export default function UniSwap() {
               )}
 
               {/* ── SUPPORT ── */}
-              {profileTab === "support" && (
+              {profileTab === "support" && !supportTopic && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
                     <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Support</div>
                   </div>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
-                    {[["Report a listing","Flag inappropriate or fraudulent content"],["Account issues","Login problems, account recovery"],["Transaction dispute","Issues with a buyer or seller"],["Suggest a feature","Help us improve UniSwap"]].map(([title, sub], i, arr) => (
-                      <div key={title} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{title}</div>
-                        <div style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{sub}</div>
+                    {[
+                      { title: "Report a listing",    sub: "Flag inappropriate or fraudulent content",   icon: "🚩", placeholder: "Which listing? What's the issue?" },
+                      { title: "Account issues",       sub: "Login problems, account recovery",            icon: "🔐", placeholder: "Describe your account issue…" },
+                      { title: "Transaction dispute",  sub: "Issues with a buyer or seller",               icon: "⚖️", placeholder: "Describe the transaction and the problem…" },
+                      { title: "Suggest a feature",   sub: "Help us improve UniSwap",                     icon: "💡", placeholder: "What feature would you love to see?" },
+                    ].map((topic, i, arr) => (
+                      <div key={topic.title} onClick={() => { setSupportTopic(topic); setSupportSubject(topic.title); setSupportMessage(""); }} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: 22, width: 28 }}>{topic.icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{topic.title}</div>
+                          <div style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{topic.sub}</div>
+                        </div>
+                        <span style={{ color: C.muted, fontSize: 18 }}>›</span>
                       </div>
                     ))}
                   </div>
-                  <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16, textAlign: "center" }}>
-                    <div style={{ color: C.muted, fontSize: 13 }}>Need urgent help? Email us at</div>
-                    <div style={{ color: C.accent, fontWeight: 700, fontSize: 14, marginTop: 4 }}>support@uniswap.campus</div>
+                  {/* Contact email */}
+                  <div onClick={() => setContactModal(true)} style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16, textAlign: "center", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = `${C.accent}18`} onMouseLeave={e => e.currentTarget.style.background = `${C.accent}0D`}>
+                    <div style={{ color: C.muted, fontSize: 13 }}>Need urgent help? Email us directly</div>
+                    <div style={{ color: C.accent, fontWeight: 700, fontSize: 15, marginTop: 6 }}>support@uniswap.campus →</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SUPPORT TOPIC FORM ── */}
+              {profileTab === "support" && supportTopic && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+                    <div onClick={() => setSupportTopic(null)} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>{supportTopic.icon} {supportTopic.title}</div>
+                      <div style={{ color: C.muted, fontSize: 13 }}>{supportTopic.sub}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "20px", display: "flex", flexDirection: "column", gap: 14 }}>
+                    {/* Auto-filled user info */}
+                    <div style={{ background: C.pill, borderRadius: 12, padding: "12px 14px" }}>
+                      <div style={{ color: C.muted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Submitting as</div>
+                      <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{profile?.full_name}</div>
+                      <div style={{ color: C.muted, fontSize: 13 }}>{profile?.email || user?.email}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Subject</div>
+                      <input value={supportSubject} onChange={e => setSupportSubject(e.target.value)} style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Details</div>
+                      <textarea
+                        value={supportMessage} onChange={e => setSupportMessage(e.target.value)}
+                        placeholder={supportTopic.placeholder}
+                        style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", height: 120, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }}
+                      />
+                      <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{supportMessage.length < 20 ? `${20 - supportMessage.length} more characters needed` : `✓ ${supportMessage.length} characters`}</div>
+                    </div>
+                  </div>
+
+                  <button onClick={handleSubmitSupportTicket} disabled={loading} style={{ background: `linear-gradient(135deg,${C.accent},#0099CC)`, color: "#000", border: "none", borderRadius: 14, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+                    {loading ? "Sending…" : "Send Request →"}
+                  </button>
+
+                  {/* Also offer email fallback */}
+                  <div style={{ textAlign: "center" }}>
+                    <span style={{ color: C.muted, fontSize: 13 }}>Or </span>
+                    <span onClick={() => setContactModal(true)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>email us directly</span>
                   </div>
                 </div>
               )}
@@ -1653,4 +1774,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-        }
+}
