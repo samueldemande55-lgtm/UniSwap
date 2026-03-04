@@ -467,9 +467,22 @@ export default function UniSwap() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const ensureProfileRow = async (uid, extra = {}) => {
+    // Upsert a minimal profile row — safe to call even if the row already exists
+    const base = { id: uid, full_name: extra.full_name || "User", email: extra.email || "", matric_number: extra.matric_number || "", rating: 0, ...extra };
+    await supabase.from("profiles").upsert(base, { onConflict: "id" });
+  };
+
   const fetchProfile = async (uid) => {
     try {
-      const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
+      if (error) {
+        // Row missing (PGRST116) or schema cache issue — create the row and use defaults
+        const fallback = { full_name: "User", email: "", matric_number: "", rating: 0 };
+        await ensureProfileRow(uid, fallback).catch(() => {});
+        setProfile({ id: uid, ...fallback });
+        return;
+      }
       setProfile(data || { full_name: "User", email: "", matric_number: "", rating: 0 });
       if (data?.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
     } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
@@ -484,7 +497,7 @@ export default function UniSwap() {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) { showToast(error.message, "error"); return; }
       if (data?.user) {
-        await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
+        await supabase.from("profiles").upsert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 }, { onConflict: "id" });
         setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
         showToast("Account created! Welcome 🎉");
       }
@@ -579,9 +592,25 @@ export default function UniSwap() {
     }
     setLoading(true);
     try {
-      const updates = { full_name: editName.trim(), matric_number: editMatric.trim(), bio: editBio.trim() };
-      const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
-      if (error) { showToast(error.message, "error"); return; }
+      const updates = {
+        id: user.id,
+        full_name: editName.trim(),
+        matric_number: editMatric.trim(),
+        bio: editBio.trim(),
+        email: profile?.email || user?.email || "",
+        rating: profile?.rating || 0,
+      };
+      // upsert handles both "table missing row" and normal update cases
+      const { error } = await supabase.from("profiles").upsert(updates, { onConflict: "id" });
+      if (error) {
+        const msg = error.message || "";
+        if (msg.includes("schema cache") || msg.includes("does not exist")) {
+          showToast("Database not ready. Please wait a moment and try again.", "error");
+        } else {
+          showToast(msg || "Failed to save. Try again.", "error");
+        }
+        return;
+      }
       setProfile(p => ({ ...p, ...updates }));
       if (newPassword) {
         const userEmail = profile?.email || user?.email;
@@ -593,7 +622,14 @@ export default function UniSwap() {
       }
       showToast(newPassword ? "Profile & password updated! ✅" : "Profile updated! ✅");
       setProfileTab("menu");
-    } catch { showToast("Failed to update. Try again.", "error"); }
+    } catch (e) {
+      const msg = e?.message || "";
+      if (msg.includes("schema cache") || msg.includes("does not exist")) {
+        showToast("Database not ready. Please refresh and try again.", "error");
+      } else {
+        showToast("Failed to update. Try again.", "error");
+      }
+    }
     finally { setLoading(false); }
   };
 
@@ -611,7 +647,7 @@ export default function UniSwap() {
       if (uploadErr) { showToast("Upload failed: " + uploadErr.message, "error"); return; }
       const { data: { publicUrl } } = supabase.storage.from("listings").getPublicUrl(path);
       const url = `${publicUrl}?t=${Date.now()}`;
-      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
+      await supabase.from("profiles").upsert({ id: user.id, avatar_url: publicUrl, email: profile?.email || user?.email || "", full_name: profile?.full_name || "User", rating: profile?.rating || 0 }, { onConflict: "id" });
       setAvatarUrl(url);
       setProfile(p => ({ ...p, avatar_url: publicUrl }));
       showToast("Profile picture updated! ✅");
@@ -1968,4 +2004,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-}
+          }
