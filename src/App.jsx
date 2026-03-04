@@ -29,8 +29,10 @@ const Input = ({ style, ...props }) => (
 const Btn = ({ primary, danger, style, children, ...props }) => (
   <button style={{ background: primary ? `linear-gradient(135deg,${C.accent},#0099CC)` : danger ? "#FF555522" : C.pill, color: primary ? "#000" : danger ? "#FF5555" : C.text, border: danger ? "1px solid #FF555544" : "none", borderRadius: 14, padding: "14px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", transition: "all .2s", ...style }} {...props}>{children}</button>
 );
-const Avatar = ({ initials, size = 36 }) => (
-  <div style={{ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent}33,${C.warm}33)`, border: `1.5px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 700, color: C.accent, flexShrink: 0 }}>{initials}</div>
+const Avatar = ({ initials, size = 36, src }) => (
+  <div style={{ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent}33,${C.warm}33)`, border: `1.5px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 700, color: C.accent, flexShrink: 0, overflow: "hidden" }}>
+    {src ? <img src={src} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials}
+  </div>
 );
 const Loader = () => (
   <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
@@ -409,6 +411,9 @@ export default function UniSwap() {
   const [editMatric, setEditMatric]     = useState("");
   const [editBio, setEditBio]           = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  const [avatarUrl, setAvatarUrl]       = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef                  = useRef(null);
   const [savedItems, setSavedItems]     = useState({});
   const [purchases, setPurchases]       = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
@@ -464,6 +469,7 @@ export default function UniSwap() {
     try {
       const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
       setProfile(data || { full_name: "User", email: "", matric_number: "", rating: 0 });
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
     } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
   };
 
@@ -591,7 +597,28 @@ export default function UniSwap() {
     finally { setLoading(false); }
   };
 
-  const fetchPurchases = async () => {
+  const handleAvatarUpload = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return showToast("Please select an image file", "error");
+    if (file.size > 3 * 1024 * 1024) return showToast("Image must be under 3MB", "error");
+    setAvatarUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `avatars/${user.id}.${ext}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("listing-images")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadErr) { showToast("Upload failed: " + uploadErr.message, "error"); return; }
+      const { data: { publicUrl } } = supabase.storage.from("listing-images").getPublicUrl(path);
+      // Bust cache with timestamp
+      const url = `${publicUrl}?t=${Date.now()}`;
+      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
+      setAvatarUrl(url);
+      setProfile(p => ({ ...p, avatar_url: publicUrl }));
+      showToast("Profile picture updated! ✅");
+    } catch { showToast("Upload failed. Try again.", "error"); }
+    finally { setAvatarUploading(false); }
+  };
     setPurchasesLoading(true);
     try {
       // Purchases = listings the user has messaged about (as buyer)
@@ -1065,7 +1092,7 @@ export default function UniSwap() {
         ))}
         <div style={{ marginTop: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderTop: `1px solid ${C.border}`, paddingTop: 20, marginTop: 8 }}>
-            <Avatar initials={initials} size={34} />
+            <Avatar initials={initials} size={34} src={avatarUrl} />
             <div style={{ minWidth: 0 }}>
               <div style={{ color: C.text, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.full_name?.split(" ")[0]}</div>
               <div style={{ color: C.muted, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.email || user?.email}</div>
@@ -1097,7 +1124,7 @@ export default function UniSwap() {
                 <div style={{ color: C.muted, fontSize: 14, marginBottom: 2 }}>Good day 👋</div>
                 <div className="page-title">Marketplace</div>
               </div>
-              <Avatar initials={initials} size={42} />
+              <Avatar initials={initials} size={42} src={avatarUrl} />
             </div>
 
             {/* Search bar */}
@@ -1418,7 +1445,7 @@ export default function UniSwap() {
               {/* Profile card */}
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "28px 24px", marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                  <Avatar initials={initials} size={72} />
+                  <Avatar initials={initials} size={72} src={avatarUrl} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>{profile?.full_name || "User"}</div>
                     <div style={{ color: C.muted, fontSize: 13, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.email || user?.email}</div>
@@ -1461,6 +1488,31 @@ export default function UniSwap() {
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Edit Profile</div>
                   </div>
 
+                  {/* ── Avatar uploader ── */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "20px 0 8px" }}>
+                    <div style={{ position: "relative", cursor: "pointer" }} onClick={() => avatarInputRef.current?.click()}>
+                      <Avatar initials={initials} size={90} src={avatarUrl} />
+                      {/* Overlay */}
+                      <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", opacity: avatarUploading ? 1 : 0, transition: "opacity .2s" }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                        onMouseLeave={e => { if (!avatarUploading) e.currentTarget.style.opacity = "0"; }}>
+                        {avatarUploading
+                          ? <div style={{ width: 22, height: 22, border: "2.5px solid #fff", borderTop: "2.5px solid transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                          : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                        }
+                      </div>
+                      {/* Camera badge */}
+                      <div style={{ position: "absolute", bottom: 2, right: 2, background: C.accent, borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.card}` }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      </div>
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 13 }}>
+                      {avatarUploading ? "Uploading…" : "Tap photo to change · Max 3MB"}
+                    </div>
+                    <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleAvatarUpload(e.target.files[0]); e.target.value = ""; }} />
+                  </div>
+
+                  {/* Bio data card */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Full Name</div>
@@ -1974,4 +2026,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                   }
+    }
