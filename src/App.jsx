@@ -138,40 +138,141 @@ const ReviewModal = ({ listing, rating, hover, text, onRate, onHover, onLeave, o
 const ContactEmailModal = ({ userEmail, onClose }) => {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const sent = subject.trim() && body.trim();
-  const handleSend = () => {
-    const mailto = `mailto:support@uniswap.campus?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + "\n\n— Sent from UniSwap\n" + userEmail)}`;
-    window.open(mailto, "_blank");
-    onClose();
+  const [mailOpened, setMailOpened] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [addrCopied, setAddrCopied] = useState(false);
+  const canSend = subject.trim().length > 0 && body.trim().length > 0;
+
+  const buildMailto = () => {
+    const fullBody = `${body.trim()}\n\n— Sent from UniSwap\nFrom: ${userEmail}`;
+    return `mailto:support@uniswap.campus?subject=${encodeURIComponent(subject.trim())}&body=${encodeURIComponent(fullBody)}`;
   };
+
+  const handleOpenMail = () => {
+    if (!canSend) return;
+    const mailto = buildMailto();
+
+    // Strategy 1: invisible anchor click — most reliable across browsers & mobile
+    const a = document.createElement("a");
+    a.href = mailto;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // Strategy 2: window.open fallback after small delay (catches cases where anchor silently fails)
+    setTimeout(() => {
+      try { window.open(mailto, "_self"); } catch {}
+    }, 300);
+
+    setMailOpened(true);
+  };
+
+  const handleCopyEmail = async () => {
+    try { await navigator.clipboard.writeText("support@uniswap.campus"); }
+    catch {
+      const tmp = document.createElement("input");
+      tmp.value = "support@uniswap.campus";
+      document.body.appendChild(tmp); tmp.select();
+      document.execCommand("copy"); document.body.removeChild(tmp);
+    }
+    setAddrCopied(true);
+    setTimeout(() => setAddrCopied(false), 2500);
+  };
+
+  const handleCopyMessage = async () => {
+    const text = `To: support@uniswap.campus\nSubject: ${subject.trim()}\n\n${body.trim()}\n\n— From: ${userEmail}`;
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const tmp = document.createElement("textarea");
+      tmp.value = text;
+      document.body.appendChild(tmp); tmp.select();
+      document.execCommand("copy"); document.body.removeChild(tmp);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
-      <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 480, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
-        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
+      <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 480, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
           <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>📧 Email Support</div>
-          <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted }}>✕</div>
+          <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted, fontSize: 16 }}>✕</div>
         </div>
-        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ background: C.pill, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: C.muted, fontSize: 13 }}>To:</span>
-            <span style={{ color: C.accent, fontWeight: 700, fontSize: 13 }}>support@uniswap.campus</span>
+
+        {/* Scrollable body */}
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
+
+          {/* To / From */}
+          <div style={{ background: C.pill, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${C.border}22` }}>
+              <span style={{ color: C.muted, fontSize: 13, width: 36, flexShrink: 0 }}>To:</span>
+              <span style={{ color: C.accent, fontWeight: 700, fontSize: 13, flex: 1 }}>support@uniswap.campus</span>
+              <span onClick={handleCopyEmail} style={{ color: addrCopied ? C.green : C.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "color .2s" }}>
+                {addrCopied ? "✓ Copied" : "Copy"}
+              </span>
+            </div>
+            <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ color: C.muted, fontSize: 13, width: 36, flexShrink: 0 }}>From:</span>
+              <span style={{ color: C.text, fontSize: 13 }}>{userEmail}</span>
+            </div>
           </div>
-          <div style={{ background: C.pill, borderRadius: 12, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: C.muted, fontSize: 13 }}>From:</span>
-            <span style={{ color: C.text, fontSize: 13 }}>{userEmail}</span>
-          </div>
+
+          {/* Subject */}
           <div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Subject</div>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Issue with my listing" style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box" }} />
+            <input
+              value={subject} onChange={e => setSubject(e.target.value)}
+              placeholder="e.g. Issue with my listing"
+              style={{ background: C.pill, border: `1px solid ${subject.trim() ? C.accent + "55" : C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box", transition: "border .2s" }}
+            />
           </div>
+
+          {/* Message */}
           <div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Message</div>
-            <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Describe your issue in detail…" style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", height: 120, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6 }} />
+            <textarea
+              value={body} onChange={e => setBody(e.target.value)}
+              placeholder="Describe your issue in detail…"
+              style={{ background: C.pill, border: `1px solid ${body.trim() ? C.accent + "55" : C.border}`, borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 14, width: "100%", height: 110, resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border .2s" }}
+            />
+            <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{body.length} characters</div>
           </div>
+
+          {/* Post-open state */}
+          {mailOpened && (
+            <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ color: C.green, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>✓ Mail app launched!</div>
+              <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
+                If your mail app didn't open, you can copy the full message below and paste it manually.
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleCopyMessage} style={{ flex: 1, background: copied ? `${C.green}22` : C.pill, color: copied ? C.green : C.text, border: `1px solid ${copied ? C.green + "44" : C.border}`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
+                  {copied ? "✓ Copied!" : "📋 Copy Message"}
+                </button>
+                <button onClick={handleOpenMail} style={{ flex: 1, background: C.pill, color: C.accent, border: `1px solid ${C.accent}33`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  🔄 Try Again
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        <div style={{ padding: "0 24px 24px", display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-          <button onClick={handleSend} disabled={!sent} style={{ flex: 2, background: sent ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, color: sent ? "#000" : C.muted, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: sent ? "pointer" : "not-allowed", transition: "all .2s" }}>Open in Mail App →</button>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 24px 24px", display: "flex", gap: 10, flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
+          <button onClick={onClose} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button
+            onClick={handleOpenMail}
+            disabled={!canSend}
+            style={{ flex: 2, background: canSend ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, color: canSend ? "#000" : C.muted, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: canSend ? "pointer" : "not-allowed", transition: "all .2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span>📬</span>
+            <span>{mailOpened ? "Open Mail Again" : "Open Mail App"}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -313,6 +414,9 @@ export default function UniSwap() {
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifPermission, setNotifPermission] = useState("default");
+  const [msgAlertsEnabled, setMsgAlertsEnabled] = useState(false);
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0); // 0=hidden, 1=confirm, 2=type-confirm
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [supportTopic, setSupportTopic] = useState(null); // active support sub-page
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
@@ -543,6 +647,7 @@ export default function UniSwap() {
       setNotifPermission(result);
       if (result === "granted") {
         setNotifEnabled(true);
+        setMsgAlertsEnabled(true);
         new Notification("UniSwap notifications enabled 🔔", { body: "You'll now get alerts for new messages and activity.", icon: "/favicon.ico" });
         showToast("Notifications enabled! 🔔");
       } else {
@@ -550,8 +655,32 @@ export default function UniSwap() {
       }
     } else {
       setNotifEnabled(false);
+      setMsgAlertsEnabled(false);
       showToast("Notifications turned off");
     }
+  };
+
+  const handleToggleMsgAlerts = () => {
+    if (!notifEnabled) return showToast("Enable Push Notifications first", "error");
+    setMsgAlertsEnabled(p => !p);
+    showToast(msgAlertsEnabled ? "Message alerts turned off" : "Message alerts turned on 🔔");
+  };
+
+  const handleDeleteAccount = async () => {
+    setLoading(true);
+    try {
+      // Delete all user data in order
+      await supabase.from("messages").delete().or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+      await supabase.from("reviews").delete().or(`seller_id.eq.${user.id},reviewer_id.eq.${user.id}`);
+      await supabase.from("listings").delete().eq("seller_id", user.id);
+      await supabase.from("profiles").delete().eq("id", user.id);
+      // Clear local storage
+      try { localStorage.removeItem("uniswap_saved"); } catch {}
+      // Sign out — auth account deletion requires admin key so we sign out instead
+      await supabase.auth.signOut();
+      showToast("Account deleted. Goodbye 👋");
+    } catch { showToast("Failed to delete. Contact support.", "error"); }
+    finally { setLoading(false); setDeleteConfirmStep(0); setDeleteConfirmText(""); }
   };
 
   const handleSubmitSupportTicket = async () => {
@@ -1517,49 +1646,120 @@ export default function UniSwap() {
               {profileTab === "settings" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-                    <div onClick={() => setProfileTab("menu")} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
+                    <div onClick={() => { setProfileTab("menu"); setDeleteConfirmStep(0); setDeleteConfirmText(""); }} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Settings</div>
                   </div>
 
-                  {/* Notifications section */}
+                  {/* ── Notifications ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Notifications</div>
                     </div>
-                    {/* Push notifications toggle */}
+
+                    {/* Push notifications */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>Push Notifications</div>
                         <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
-                          {notifPermission === "denied" ? "Blocked by browser — change in browser settings" : notifEnabled ? "You'll receive alerts for messages and activity" : "Allow UniSwap to send you pop-up alerts"}
+                          {notifPermission === "denied" ? "Blocked — change in browser settings" : notifEnabled ? "You'll receive alerts for messages and activity" : "Allow UniSwap to send you pop-up alerts"}
                         </div>
                       </div>
-                      {/* Toggle switch */}
                       <div onClick={handleToggleNotifications} style={{ width: 50, height: 28, borderRadius: 14, background: notifEnabled ? C.accent : C.border, position: "relative", cursor: notifPermission === "denied" ? "not-allowed" : "pointer", transition: "background .25s", flexShrink: 0, opacity: notifPermission === "denied" ? 0.5 : 1 }}>
                         <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
                       </div>
                     </div>
-                    {/* Message notifications toggle */}
+
+                    {/* Message alerts — own independent toggle */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, borderTop: `1px solid ${C.border}22` }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>New Message Alerts</div>
-                        <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Pop-up when a buyer or seller messages you</div>
+                        <div style={{ color: notifEnabled ? C.text : C.muted, fontSize: 15, fontWeight: 500 }}>New Message Alerts</div>
+                        <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>
+                          {!notifEnabled ? "Enable Push Notifications first" : msgAlertsEnabled ? "You'll be alerted when someone messages you" : "Message pop-ups are off"}
+                        </div>
                       </div>
-                      <div onClick={notifEnabled ? handleToggleNotifications : undefined} style={{ width: 50, height: 28, borderRadius: 14, background: notifEnabled ? C.accent : C.border, position: "relative", cursor: notifEnabled ? "pointer" : "not-allowed", transition: "background .25s", flexShrink: 0, opacity: notifEnabled ? 1 : 0.4 }}>
-                        <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
+                      <div onClick={handleToggleMsgAlerts} style={{ width: 50, height: 28, borderRadius: 14, background: msgAlertsEnabled && notifEnabled ? C.accent : C.border, position: "relative", cursor: notifEnabled ? "pointer" : "not-allowed", transition: "background .25s", flexShrink: 0, opacity: notifEnabled ? 1 : 0.35 }}>
+                        <div style={{ position: "absolute", top: 3, left: msgAlertsEnabled && notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
                       </div>
                     </div>
                   </div>
 
-                  {/* Appearance section */}
+                  {/* ── About ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>About</div>
                     </div>
-                    <div style={{ padding: "16px 20px" }}>
-                      <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>UniSwap</div>
-                      <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Campus marketplace · v1.0.0</div>
+                    <div style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>UniSwap</div>
+                        <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Campus marketplace · v1.0.0</div>
+                      </div>
+                      <div style={{ background: `${C.green}22`, color: C.green, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 10 }}>Up to date</div>
                     </div>
+                  </div>
+
+                  {/* ── Danger Zone ── */}
+                  <div style={{ background: C.card, border: `1px solid #FF555533`, borderRadius: 20, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 20px", borderBottom: `1px solid #FF555522` }}>
+                      <div style={{ color: "#FF5555", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Danger Zone</div>
+                    </div>
+
+                    {/* Step 0 — initial delete button */}
+                    {deleteConfirmStep === 0 && (
+                      <div onClick={() => setDeleteConfirmStep(1)} style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = "#FF555511"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ color: "#FF5555", fontSize: 15, fontWeight: 600 }}>Delete Account</div>
+                          <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Permanently remove your account and all data</div>
+                        </div>
+                        <span style={{ color: "#FF5555", fontSize: 18 }}>›</span>
+                      </div>
+                    )}
+
+                    {/* Step 1 — are you sure? */}
+                    {deleteConfirmStep === 1 && (
+                      <div style={{ padding: "20px" }}>
+                        <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Are you sure?</div>
+                        <div style={{ background: "#FF555511", border: "1px solid #FF555533", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+                          <div style={{ color: "#FF5555", fontSize: 13, lineHeight: 1.7 }}>
+                            This will permanently delete:<br />
+                            • Your profile and account<br />
+                            • All your listings<br />
+                            • All your messages<br />
+                            • All your reviews<br />
+                            <strong>This cannot be undone.</strong>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button onClick={() => setDeleteConfirmStep(0)} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                          <button onClick={() => setDeleteConfirmStep(2)} style={{ flex: 1, background: "#FF555522", color: "#FF5555", border: "1px solid #FF555544", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Continue →</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step 2 — type DELETE to confirm */}
+                    {deleteConfirmStep === 2 && (
+                      <div style={{ padding: "20px" }}>
+                        <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Final confirmation</div>
+                        <div style={{ color: C.muted, fontSize: 13, marginBottom: 14, lineHeight: 1.6 }}>
+                          Type <strong style={{ color: "#FF5555" }}>DELETE</strong> below to permanently delete your account.
+                        </div>
+                        <input
+                          value={deleteConfirmText}
+                          onChange={e => setDeleteConfirmText(e.target.value)}
+                          placeholder="Type DELETE here"
+                          style={{ background: C.pill, border: `1.5px solid ${deleteConfirmText === "DELETE" ? "#FF5555" : C.border}`, borderRadius: 12, padding: "12px 16px", color: deleteConfirmText === "DELETE" ? "#FF5555" : C.text, fontSize: 15, fontWeight: 700, width: "100%", outline: "none", boxSizing: "border-box", marginBottom: 14, letterSpacing: 1 }}
+                        />
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button onClick={() => { setDeleteConfirmStep(0); setDeleteConfirmText(""); }} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                          <button
+                            onClick={handleDeleteAccount}
+                            disabled={deleteConfirmText !== "DELETE" || loading}
+                            style={{ flex: 1, background: deleteConfirmText === "DELETE" ? "#FF5555" : "#FF555522", color: deleteConfirmText === "DELETE" ? "#fff" : "#FF555566", border: "none", borderRadius: 12, padding: "12px", fontSize: 14, fontWeight: 700, cursor: deleteConfirmText === "DELETE" ? "pointer" : "not-allowed", transition: "all .2s" }}
+                          >
+                            {loading ? "Deleting…" : "Delete Forever"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1774,4 +1974,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-}
+                   }
