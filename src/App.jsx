@@ -619,6 +619,8 @@ export default function UniSwap() {
     } catch { showToast("Upload failed. Try again.", "error"); }
     finally { setAvatarUploading(false); }
   };
+
+  const fetchPurchases = async () => {
     setPurchasesLoading(true);
     try {
       // Purchases = listings the user has messaged about (as buyer)
@@ -2026,4 +2028,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-    }
+                            }
