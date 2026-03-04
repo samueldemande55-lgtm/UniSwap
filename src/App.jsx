@@ -428,6 +428,8 @@ export default function UniSwap() {
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [contactModal, setContactModal] = useState(false);
+  const [dbReady, setDbReady]           = useState(null); // null=checking, true=ok, false=missing
+  const [setupCopied, setSetupCopied]   = useState(false);
   const [unreadCount, setUnreadCount]   = useState(0);
   const [chatProfiles, setChatProfiles] = useState({}); // uid -> { full_name, avatar_url }
   const [otherIsTyping, setOtherIsTyping] = useState(false);
@@ -470,6 +472,27 @@ export default function UniSwap() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // ── DB readiness check ────────────────────────────────────────────────────────
+  const DB_ERROR_PATTERNS = ["schema cache", "does not exist", "relation", "PGRST", "42P01", "undefined table", "not found"];
+  const isDbError = (err) => {
+    if (!err) return false;
+    const msg = (err.message || err.code || "").toLowerCase();
+    return DB_ERROR_PATTERNS.some(p => msg.includes(p.toLowerCase()));
+  };
+
+  useEffect(() => {
+    const checkDb = async () => {
+      try {
+        const { error } = await supabase.from("listings").select("id").limit(1);
+        setDbReady(isDbError(error) ? false : true);
+      } catch (e) {
+        // Network error — don't block the user, let them try
+        setDbReady(true);
+      }
+    };
+    if (user) checkDb();
+  }, [user]);
 
   // ── Profile helpers ──────────────────────────────────────────────────────────
   // Primary store: Supabase Auth user_metadata (always available, no table needed)
@@ -840,7 +863,8 @@ export default function UniSwap() {
     try {
       let q = supabase.from("listings").select("*, profiles(full_name)").eq("is_sold", false).order("created_at", { ascending: false });
       if (activeCat !== "All") q = q.eq("category", activeCat);
-      const { data } = await q;
+      const { data, error } = await q;
+      if (isDbError(error)) { setDbReady(false); setListings([]); return; }
       setListings(data || []);
     } catch { setListings([]); }
     finally { setListingsLoading(false); }
@@ -871,16 +895,27 @@ export default function UniSwap() {
 
   const handlePostListing = async () => {
     if (!sellTitle || !sellPrice) return showToast("Title and price required", "error");
+    if (dbReady === false) return showToast("Database not set up yet. See the setup guide in Account → Support.", "error");
     setLoading(true); setUploadProgress(0);
     try {
-      const { data: listing, error } = await supabase.from("listings").insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false, image_urls: [] }).select().single();
-      if (error) { showToast(error.message, "error"); return; }
+      const { data: listing, error } = await supabase.from("listings")
+        .insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false, image_urls: [] })
+        .select().single();
+      if (error) {
+        if (isDbError(error)) {
+          setDbReady(false);
+        } else {
+          showToast(error.message || "Failed to post. Try again.", "error");
+        }
+        return;
+      }
       if (sellPhotos.length > 0) {
         const urls = await uploadPhotos(listing.id);
         await supabase.from("listings").update({ image_urls: JSON.stringify(urls) }).eq("id", listing.id);
       }
       showToast("Listing posted! 🎉");
       setSellTitle(""); setSellPrice(""); setSellDesc(""); setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
+      setDbReady(true);
       fetchListings(); setTab("home");
     } catch { showToast("Failed to post. Try again.", "error"); }
     finally { setLoading(false); }
@@ -1034,12 +1069,13 @@ export default function UniSwap() {
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
   // ── Loading splash ─────────────────────────────────────────────────────────
-  if (!authReady) return (
+  if (!authReady || (user && dbReady === null)) return (
     <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 24 }}>
       <style>{GLOBAL_CSS}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <div style={{ fontSize: 56 }}>🛒</div>
       <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
+      <div style={{ color: C.muted, fontSize: 14 }}>{user && dbReady === null ? "Checking database…" : "Loading…"}</div>
       <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
@@ -1167,6 +1203,175 @@ export default function UniSwap() {
           <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}1A`, textAlign: "center" }}>
             <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed</div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── DB Setup Screen ───────────────────────────────────────────────────────
+  const DB_SETUP_SQL = `-- Run this once in your Supabase SQL Editor
+-- https://supabase.com/dashboard → your project → SQL Editor
+
+create table if not exists public.profiles (
+  id uuid references auth.users on delete cascade primary key,
+  full_name text,
+  email text,
+  matric_number text,
+  bio text,
+  avatar_url text,
+  rating numeric default 0,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.listings (
+  id uuid default gen_random_uuid() primary key,
+  title text not null,
+  price integer not null,
+  category text,
+  condition text,
+  description text,
+  seller_id uuid references auth.users on delete cascade,
+  image_urls jsonb default '[]',
+  is_sold boolean default false,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.messages (
+  id uuid default gen_random_uuid() primary key,
+  sender_id uuid references auth.users on delete cascade,
+  receiver_id uuid references auth.users on delete cascade,
+  listing_id uuid references public.listings on delete cascade,
+  content text not null,
+  is_read boolean default false,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.reviews (
+  id uuid default gen_random_uuid() primary key,
+  listing_id uuid references public.listings on delete cascade,
+  seller_id uuid references auth.users on delete cascade,
+  reviewer_id uuid references auth.users on delete cascade,
+  rating integer check (rating between 1 and 5),
+  comment text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.support_tickets (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users on delete cascade,
+  email text,
+  topic text,
+  subject text,
+  message text,
+  created_at timestamptz default now()
+);
+
+-- Enable Row Level Security (RLS) & allow authenticated users
+alter table public.profiles enable row level security;
+alter table public.listings enable row level security;
+alter table public.messages enable row level security;
+alter table public.reviews enable row level security;
+alter table public.support_tickets enable row level security;
+
+create policy if not exists "Public profiles" on public.profiles for all using (true) with check (true);
+create policy if not exists "Public listings" on public.listings for all using (true) with check (true);
+create policy if not exists "Public messages" on public.messages for all using (true) with check (true);
+create policy if not exists "Public reviews" on public.reviews for all using (true) with check (true);
+create policy if not exists "Public support" on public.support_tickets for all using (true) with check (true);`;
+
+  if (user && dbReady === false) return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <style>{GLOBAL_CSS}</style>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+      <Toast {...toast} />
+      <div style={{ width: "100%", maxWidth: 600, display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {/* Header */}
+        <div style={{ background: C.card, borderRadius: 24, padding: "28px 28px 24px", border: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: `${C.warm}22`, border: `1px solid ${C.warm}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>⚠️</div>
+            <div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Database Setup Required</div>
+              <div style={{ color: C.muted, fontSize: 14, marginTop: 2 }}>Your Supabase tables haven't been created yet.</div>
+            </div>
+          </div>
+          <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "14px 16px" }}>
+            <div style={{ color: C.accent, fontSize: 13, lineHeight: 1.7 }}>
+              This is a one-time setup. Copy the SQL below and run it in your Supabase SQL Editor — it takes about 30 seconds.
+            </div>
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div style={{ background: C.card, borderRadius: 24, padding: "24px 28px", border: `1px solid ${C.border}` }}>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 15, fontWeight: 800, marginBottom: 16 }}>How to fix this:</div>
+          {[
+            ["1", `Go to supabase.com/dashboard`, "Open your project"],
+            ["2", "Click SQL Editor in the left sidebar", "The code editor tab"],
+            ["3", "Click New query", "Top left of the editor"],
+            ["4", "Paste the SQL below and click Run", "Green button, bottom right"],
+            ["5", "Come back here and tap I've done this", "Your app will work instantly"],
+          ].map(([num, title, sub]) => (
+            <div key={num} style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 14 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent},#0099CC)`, color: "#000", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{num}</div>
+              <div>
+                <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{title}</div>
+                <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* SQL Block */}
+        <div style={{ background: C.card, borderRadius: 24, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 14, fontWeight: 800 }}>setup.sql</div>
+            <button
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(DB_SETUP_SQL); }
+                catch { const t = document.createElement("textarea"); t.value = DB_SETUP_SQL; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t); }
+                setSetupCopied(true);
+                setTimeout(() => setSetupCopied(false), 3000);
+              }}
+              style={{ background: setupCopied ? `${C.green}22` : `${C.accent}18`, color: setupCopied ? C.green : C.accent, border: `1px solid ${setupCopied ? C.green + "44" : C.accent + "33"}`, borderRadius: 10, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all .2s", display: "flex", alignItems: "center", gap: 6 }}>
+              {setupCopied ? "✓ Copied!" : "Copy SQL"}
+            </button>
+          </div>
+          <div style={{ overflowX: "auto", maxHeight: 220, padding: "14px 20px" }}>
+            <pre style={{ margin: 0, color: C.muted, fontSize: 11, lineHeight: 1.7, fontFamily: "monospace", whiteSpace: "pre" }}>{DB_SETUP_SQL}</pre>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <button
+            onClick={async () => {
+              setDbReady(null);
+              try {
+                const { error } = await supabase.from("listings").select("id").limit(1);
+                if (isDbError(error)) {
+                  setDbReady(false);
+                  showToast("Tables still not found. Make sure you ran the SQL and hit Run.", "error");
+                } else {
+                  setDbReady(true);
+                  showToast("Database ready! Welcome to UniSwap 🎉");
+                }
+              } catch { setDbReady(true); }
+            }}
+            style={{ flex: 2, background: `linear-gradient(135deg,${C.accent},#0099CC)`, color: "#000", border: "none", borderRadius: 16, padding: "15px", fontSize: 15, fontWeight: 800, cursor: "pointer" }}>
+            {dbReady === null ? "Checking…" : "I've done this — Check Again"}
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut().then(() => { setUser(null); setDbReady(null); })}
+            style={{ flex: 1, background: C.pill, color: C.muted, border: `1px solid ${C.border}`, borderRadius: 16, padding: "15px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            Sign Out
+          </button>
+        </div>
+
+        <div style={{ textAlign: "center", color: C.muted, fontSize: 12, lineHeight: 1.6 }}>
+          Need help? Visit{" "}
+          <a href="https://supabase.com/docs" target="_blank" rel="noreferrer" style={{ color: C.accent }}>supabase.com/docs</a>
+          {" "}or contact support.
         </div>
       </div>
     </div>
@@ -1704,6 +1909,18 @@ export default function UniSwap() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <div className="page-header"><div className="page-title">Sell an Item</div></div>
             <div className="form-page">
+              {dbReady === false && (
+                <div style={{ background: `${C.warm}15`, border: `1px solid ${C.warm}44`, borderRadius: 16, padding: "16px 18px", marginBottom: 20, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>⚠️</span>
+                  <div>
+                    <div style={{ color: C.warm, fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Database tables not set up yet</div>
+                    <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
+                      Listings can't be saved until your Supabase tables are created.{" "}
+                      <span onClick={() => setDbReady(false)} style={{ color: C.accent, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>View setup guide →</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div style={{ color: C.muted, fontSize: 15, marginBottom: 28 }}>Turn your unused stuff into cash 💰</div>
 
               <div style={{ marginBottom: 24 }}>
@@ -2321,4 +2538,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-            }
+      }
