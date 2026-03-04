@@ -428,7 +428,7 @@ export default function UniSwap() {
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [contactModal, setContactModal] = useState(false);
-  const [dbReady, setDbReady]           = useState(null); // null=checking, true=ok, false=missing
+  const [dbReady, setDbReady]           = useState(true);  // optimistic — only set false on actual write failure
   const [setupCopied, setSetupCopied]   = useState(false);
   const [unreadCount, setUnreadCount]   = useState(0);
   const [chatProfiles, setChatProfiles] = useState({}); // uid -> { full_name, avatar_url }
@@ -473,26 +473,13 @@ export default function UniSwap() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── DB readiness check ────────────────────────────────────────────────────────
-  const DB_ERROR_PATTERNS = ["schema cache", "does not exist", "relation", "PGRST", "42P01", "undefined table", "not found"];
+  // ── DB error detection — only triggered on failed write operations ──────────
+  const DB_ERROR_PATTERNS = ["schema cache", "does not exist", "relation", "42P01", "undefined table"];
   const isDbError = (err) => {
     if (!err) return false;
     const msg = (err.message || err.code || "").toLowerCase();
     return DB_ERROR_PATTERNS.some(p => msg.includes(p.toLowerCase()));
   };
-
-  useEffect(() => {
-    const checkDb = async () => {
-      try {
-        const { error } = await supabase.from("listings").select("id").limit(1);
-        setDbReady(isDbError(error) ? false : true);
-      } catch (e) {
-        // Network error — don't block the user, let them try
-        setDbReady(true);
-      }
-    };
-    if (user) checkDb();
-  }, [user]);
 
   // ── Profile helpers ──────────────────────────────────────────────────────────
   // Primary store: Supabase Auth user_metadata (always available, no table needed)
@@ -864,7 +851,8 @@ export default function UniSwap() {
       let q = supabase.from("listings").select("*, profiles(full_name)").eq("is_sold", false).order("created_at", { ascending: false });
       if (activeCat !== "All") q = q.eq("category", activeCat);
       const { data, error } = await q;
-      if (isDbError(error)) { setDbReady(false); setListings([]); return; }
+      // Table missing — show empty home, don't block app
+      if (error) { setListings([]); return; }
       setListings(data || []);
     } catch { setListings([]); }
     finally { setListingsLoading(false); }
@@ -1069,13 +1057,13 @@ export default function UniSwap() {
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
   // ── Loading splash ─────────────────────────────────────────────────────────
-  if (!authReady || (user && dbReady === null)) return (
+  if (!authReady) return (
     <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 24 }}>
       <style>{GLOBAL_CSS}</style>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <div style={{ fontSize: 56 }}>🛒</div>
       <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
-      <div style={{ color: C.muted, fontSize: 14 }}>{user && dbReady === null ? "Checking database…" : "Loading…"}</div>
+      <div style={{ color: C.muted, fontSize: 14 }}>Loading…</div>
       <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
@@ -2538,4 +2526,4 @@ create policy if not exists "Public support" on public.support_tickets for all u
       </nav>
     </div>
   );
-      }
+                                                   }
