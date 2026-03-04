@@ -428,6 +428,10 @@ export default function UniSwap() {
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [contactModal, setContactModal] = useState(false);
+  const [unreadCount, setUnreadCount]   = useState(0);
+  const [chatProfiles, setChatProfiles] = useState({}); // uid -> { full_name, avatar_url }
+  const [otherIsTyping, setOtherIsTyping] = useState(false);
+  const realtimeRef = useRef(null);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -883,36 +887,147 @@ export default function UniSwap() {
   };
 
   // ── Messages ───────────────────────────────────────────────────────────────
-  useEffect(() => { if (tab === "messages" && user) fetchChats(); }, [tab, user]);
+
+  // Fetch profile info for a list of user IDs and cache in chatProfiles
+  const loadChatProfiles = async (uids) => {
+    const missing = uids.filter(id => id && !chatProfiles[id]);
+    if (!missing.length) return;
+    try {
+      const { data } = await supabase.from("profiles").select("id, full_name, avatar_url").in("id", missing);
+      if (data?.length) {
+        setChatProfiles(prev => {
+          const next = { ...prev };
+          data.forEach(p => { next[p.id] = p; });
+          return next;
+        });
+      }
+    } catch { /* profiles table may not exist — avatars will show initials */ }
+  };
+
+  // Count total unread messages for the current user
+  const refreshUnreadCount = async () => {
+    if (!user) return;
+    try {
+      const { count } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("receiver_id", user.id)
+        .eq("is_read", false);
+      setUnreadCount(count || 0);
+    } catch { setUnreadCount(0); }
+  };
+
+  useEffect(() => { if (tab === "messages" && user) { fetchChats(); refreshUnreadCount(); } }, [tab, user]);
+
+  // Global realtime subscription — runs once user is known
+  useEffect(() => {
+    if (!user) return;
+    refreshUnreadCount();
+
+    // Subscribe to all new messages directed at this user
+    const channel = supabase
+      .channel(`inbox:${user.id}`)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "messages",
+        filter: `receiver_id=eq.${user.id}`,
+      }, (payload) => {
+        const msg = payload.new;
+        // If the chat for this message is open, append live
+        setSelectedChat(prev => {
+          if (prev && prev.listing_id === msg.listing_id) {
+            setMessages(msgs => {
+              if (msgs.find(m => m.id === msg.id)) return msgs;
+              return [...msgs, msg];
+            });
+            // Mark as read immediately since chat is open
+            supabase.from("messages").update({ is_read: true }).eq("id", msg.id).then(() => {});
+          } else {
+            // Increment badge
+            setUnreadCount(n => n + 1);
+          }
+          return prev;
+        });
+        // Refresh chat list preview
+        fetchChats();
+      })
+      .subscribe();
+
+    realtimeRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   const fetchChats = async () => {
+    if (!user) return;
     try {
-      const { data } = await supabase.from("messages").select("*, listings(title)").or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at", { ascending: false });
+      const { data } = await supabase
+        .from("messages")
+        .select("*, listings(title, image_urls)")
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .order("created_at", { ascending: false });
+
+      // Group by listing_id keeping only the latest message per conversation
       const seen = {}; const grouped = [];
       (data || []).forEach(m => { if (!seen[m.listing_id]) { seen[m.listing_id] = true; grouped.push(m); } });
       setChats(grouped);
+
+      // Load profiles for all conversation partners
+      const uids = grouped.map(m => m.sender_id === user.id ? m.receiver_id : m.sender_id).filter(Boolean);
+      loadChatProfiles([...new Set(uids)]);
     } catch { setChats([]); }
+  };
+
+  // Count unread per conversation (for badge on each row)
+  const getConvUnread = (chat) => {
+    // We will use a per-conversation unread derived from messages state
+    // For the list view we just check is_read on the last message
+    return (!chat.is_read && chat.receiver_id === user.id) ? 1 : 0;
   };
 
   const openChat = async (chat) => {
     setSelectedChat(chat);
-    const { data } = await supabase.from("messages").select("*").eq("listing_id", chat.listing_id).order("created_at", { ascending: true });
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("listing_id", chat.listing_id)
+      .order("created_at", { ascending: true });
     setMessages(data || []);
+
+    // Mark all messages in this convo as read
+    supabase.from("messages")
+      .update({ is_read: true })
+      .eq("listing_id", chat.listing_id)
+      .eq("receiver_id", user.id)
+      .then(() => refreshUnreadCount());
+
+    // Load the other person's profile
+    const otherId = chat.sender_id === user.id ? chat.receiver_id : chat.sender_id;
+    loadChatProfiles([otherId]);
   };
 
   const sendMessage = async () => {
     if (!msgInput.trim() || !selectedChat) return;
     const receiverId = selectedChat.sender_id === user.id ? selectedChat.receiver_id : selectedChat.sender_id;
-    const { data } = await supabase.from("messages").insert({ sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: msgInput, is_read: false }).select().single();
-    if (data) setMessages(p => [...p, data]);
+    const optimistic = { id: `opt-${Date.now()}`, sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: msgInput.trim(), is_read: false, created_at: new Date().toISOString() };
+    setMessages(p => [...p, optimistic]);
     setMsgInput("");
+    const { data } = await supabase.from("messages")
+      .insert({ sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: optimistic.content, is_read: false })
+      .select().single();
+    if (data) {
+      setMessages(p => p.map(m => m.id === optimistic.id ? data : m));
+      fetchChats();
+    }
   };
 
   const startChat = async (listing) => {
-    const chat = { listing_id: listing.id, listings: { title: listing.title }, sender_id: user.id, receiver_id: listing.seller_id };
+    const otherId = listing.seller_id;
+    const chat = { listing_id: listing.id, listings: { title: listing.title, image_urls: listing.image_urls }, sender_id: user.id, receiver_id: otherId };
     setSelectedChat(chat);
     const { data } = await supabase.from("messages").select("*").eq("listing_id", listing.id).or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at", { ascending: true });
     setMessages(data || []);
+    loadChatProfiles([otherId]);
     setTab("messages");
   };
 
@@ -1141,8 +1256,20 @@ export default function UniSwap() {
         </div>
         {NAV_ITEMS.map(({ id, icon, label }) => (
           <div key={id} className={`nav-item ${tab === id ? "active" : ""}`} onClick={() => handleTabChange(id)}>
-            <span className="nav-icon">{icon}</span>
+            <span className="nav-icon" style={{ position: "relative" }}>
+              {icon}
+              {id === "messages" && unreadCount > 0 && (
+                <span style={{ position: "absolute", top: -4, right: -6, background: "#FF5555", color: "#fff", borderRadius: "50%", minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 3px", border: `2px solid ${C.sidebar}` }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </span>
             <span>{label}</span>
+            {id === "messages" && unreadCount > 0 && tab !== "messages" && (
+              <span style={{ marginLeft: "auto", background: "#FF5555", color: "#fff", borderRadius: 10, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
           </div>
         ))}
         <div style={{ marginTop: "auto" }}>
@@ -1359,66 +1486,218 @@ export default function UniSwap() {
           );
         })()}
 
-        {/* ─── MESSAGES ─── */}
+        {/* ─── MESSAGES LIST ─── */}
         {tab === "messages" && !selectedChat && (
           <>
-            <div className="page-header"><div className="page-title">Messages</div></div>
-            <div style={{ padding: "0 0 80px" }}>
+            <div className="page-header" style={{ marginBottom: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div className="page-title">Messages</div>
+                {unreadCount > 0 && (
+                  <div style={{ background: "#FF5555", color: "#fff", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 800 }}>
+                    {unreadCount} unread
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ padding: "16px 0 80px" }}>
               {chats.length === 0 ? (
                 <div style={{ textAlign: "center", color: C.muted, padding: "80px 20px" }}>
-                  <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>No conversations yet</div>
-                  <div style={{ fontSize: 14, marginTop: 4 }}>Browse listings and message a seller!</div>
+                  <div style={{ fontSize: 56, marginBottom: 16 }}>💬</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 8 }}>No conversations yet</div>
+                  <div style={{ fontSize: 14 }}>Browse listings and tap Message on any item.</div>
                 </div>
-              ) : chats.map(c => (
-                <div key={c.id} onClick={() => openChat(c)} style={{ padding: "16px 24px", display: "flex", gap: 14, alignItems: "center", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <Avatar initials="??" size={48} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.listings?.title}</div>
-                      <div style={{ color: C.muted, fontSize: 12, flexShrink: 0 }}>{new Date(c.created_at).toLocaleDateString()}</div>
+              ) : chats.map(c => {
+                const otherId = c.sender_id === user.id ? c.receiver_id : c.sender_id;
+                const otherProfile = chatProfiles[otherId];
+                const otherName = otherProfile?.full_name || "Campus User";
+                const otherInitials = otherName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+                const isUnread = !c.is_read && c.receiver_id === user.id;
+                const listingImgs = (() => { try { const u = c.listings?.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
+                const thumb = listingImgs[0] || null;
+
+                // Format time: today show time, older show date
+                const msgDate = new Date(c.created_at);
+                const now = new Date();
+                const isToday = msgDate.toDateString() === now.toDateString();
+                const timeStr = isToday
+                  ? msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                  : msgDate.toLocaleDateString([], { month: "short", day: "numeric" });
+
+                return (
+                  <div key={c.id} onClick={() => openChat(c)}
+                    style={{ padding: "14px 20px", display: "flex", gap: 14, alignItems: "center", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, transition: "background .15s", background: isUnread ? `${C.accent}08` : "transparent", position: "relative" }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.pill}
+                    onMouseLeave={e => e.currentTarget.style.background = isUnread ? `${C.accent}08` : "transparent"}>
+
+                    {/* Unread left bar */}
+                    {isUnread && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: C.accent, borderRadius: "0 3px 3px 0" }} />}
+
+                    {/* Avatar with listing thumbnail overlay */}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <Avatar initials={otherInitials} size={50} src={otherProfile?.avatar_url} />
+                      {thumb && (
+                        <div style={{ position: "absolute", bottom: -2, right: -4, width: 22, height: 22, borderRadius: 6, overflow: "hidden", border: `2px solid ${C.card}` }}>
+                          <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      )}
                     </div>
-                    <div style={{ color: C.muted, fontSize: 13, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.content}</div>
+
+                    {/* Text content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                        <div style={{ color: isUnread ? C.text : C.text, fontWeight: isUnread ? 800 : 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {otherName}
+                        </div>
+                        <div style={{ color: isUnread ? C.accent : C.muted, fontSize: 12, flexShrink: 0, fontWeight: isUnread ? 700 : 400 }}>{timeStr}</div>
+                      </div>
+                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: "italic" }}>
+                        Re: {c.listings?.title}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ color: isUnread ? C.text : C.muted, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: isUnread ? 600 : 400, flex: 1 }}>
+                          {c.sender_id === user.id ? "You: " : ""}{c.content}
+                        </div>
+                        {isUnread && (
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.accent, flexShrink: 0 }} />
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}
 
         {/* ─── CHAT DETAIL ─── */}
-        {tab === "messages" && selectedChat && (
-          <div className="detail-panel">
-            <div style={{ padding: "14px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card }}>
-              <div onClick={() => setSelectedChat(null)} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%" }}>←</div>
-              <Avatar initials="??" size={38} />
-              <div>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>Chat</div>
-                <div style={{ color: C.muted, fontSize: 12 }}>Re: {selectedChat?.listings?.title}</div>
-              </div>
-              <div style={{ marginLeft: "auto", background: `${C.green}22`, color: C.green, fontSize: 11, padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>Active</div>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-              {messages.length === 0 && <div style={{ textAlign: "center", color: C.muted, padding: "60px 20px", fontSize: 14 }}>No messages yet. Say hi! 👋</div>}
-              {messages.map(m => {
-                const isMe = m.sender_id === user.id;
-                return (
-                  <div key={m.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom: 12 }}>
-                    <div style={{ maxWidth: "70%", background: isMe ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill, color: isMe ? "#000" : C.text, borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px", padding: "11px 15px", fontSize: 14, lineHeight: 1.5 }}>
-                      <div>{m.content}</div>
-                      <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: "right" }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                    </div>
+        {tab === "messages" && selectedChat && (() => {
+          const otherId = selectedChat.sender_id === user.id ? selectedChat.receiver_id : selectedChat.sender_id;
+          const otherProfile = chatProfiles[otherId];
+          const otherName = otherProfile?.full_name || "Campus User";
+          const otherInitials = otherName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+          const listingImgs = (() => { try { const u = selectedChat.listings?.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
+          const thumb = listingImgs[0] || null;
+
+          // Group messages by date
+          let lastDateLabel = "";
+          return (
+            <div className="detail-panel">
+              {/* Header */}
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card, flexShrink: 0 }}>
+                <div onClick={() => { setSelectedChat(null); fetchChats(); }}
+                  style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0, fontSize: 18 }}>←</div>
+
+                <Avatar initials={otherInitials} size={40} src={otherProfile?.avatar_url} />
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{otherName}</div>
+                  <div style={{ color: C.muted, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Re: {selectedChat?.listings?.title}</div>
+                </div>
+
+                {/* Listing thumbnail shortcut */}
+                {thumb && (
+                  <div style={{ width: 40, height: 40, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: 0 }}>
+                    <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   </div>
-                );
-              })}
-              <div ref={msgEndRef} />
+                )}
+              </div>
+
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 8px" }}>
+                {messages.length === 0 && (
+                  <div style={{ textAlign: "center", color: C.muted, padding: "60px 20px" }}>
+                    <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Start the conversation</div>
+                    <div style={{ fontSize: 13, marginTop: 6 }}>Say hi or ask about the listing!</div>
+                  </div>
+                )}
+                {messages.map((m, idx) => {
+                  const isMe = m.sender_id === user.id;
+                  const isOptimistic = String(m.id).startsWith("opt-");
+                  const msgDate = new Date(m.created_at);
+                  const now = new Date();
+                  const isToday = msgDate.toDateString() === now.toDateString();
+                  const isYesterday = new Date(now - 86400000).toDateString() === msgDate.toDateString();
+                  const dateLabel = isToday ? "Today" : isYesterday ? "Yesterday" : msgDate.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+                  const showDateLabel = dateLabel !== lastDateLabel;
+                  if (showDateLabel) lastDateLabel = dateLabel;
+
+                  // Show avatar for other person only on last consecutive message
+                  const nextMsg = messages[idx + 1];
+                  const isLastInGroup = !nextMsg || nextMsg.sender_id !== m.sender_id;
+
+                  return (
+                    <div key={m.id}>
+                      {showDateLabel && (
+                        <div style={{ textAlign: "center", margin: "16px 0 12px" }}>
+                          <span style={{ background: C.pill, color: C.muted, fontSize: 11, fontWeight: 600, padding: "4px 14px", borderRadius: 20, letterSpacing: 0.5 }}>{dateLabel}</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 8, marginBottom: isLastInGroup ? 12 : 3 }}>
+                        {/* Other person's avatar — only on last in group */}
+                        {!isMe && (
+                          <div style={{ width: 28, flexShrink: 0, marginBottom: 2 }}>
+                            {isLastInGroup && <Avatar initials={otherInitials} size={28} src={otherProfile?.avatar_url} />}
+                          </div>
+                        )}
+
+                        <div style={{ maxWidth: "72%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
+                          <div style={{
+                            background: isMe ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill,
+                            color: isMe ? "#000" : C.text,
+                            borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                            padding: "10px 14px",
+                            fontSize: 14,
+                            lineHeight: 1.55,
+                            opacity: isOptimistic ? 0.7 : 1,
+                            transition: "opacity .3s",
+                            boxShadow: isMe ? `0 2px 12px ${C.accent}33` : "none",
+                          }}>
+                            {m.content}
+                          </div>
+                          {isLastInGroup && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                              <span style={{ fontSize: 10, color: C.muted }}>
+                                {msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              {isMe && (
+                                <span style={{ fontSize: 10, color: isOptimistic ? C.muted : m.is_read ? C.accent : C.muted }}>
+                                  {isOptimistic ? "•" : m.is_read ? "✓✓" : "✓"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={msgEndRef} />
+              </div>
+
+              {/* Input bar */}
+              <div style={{ padding: "10px 14px 24px", display: "flex", gap: 10, alignItems: "flex-end", borderTop: `1px solid ${C.border}`, background: C.card, flexShrink: 0 }}>
+                <div style={{ flex: 1, background: C.pill, border: `1.5px solid ${msgInput.trim() ? C.accent + "55" : C.border}`, borderRadius: 22, padding: "10px 16px", display: "flex", alignItems: "center", transition: "border .2s", minHeight: 44 }}>
+                  <textarea
+                    value={msgInput}
+                    onChange={e => { setMsgInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px"; }}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                    placeholder="Type a message…"
+                    rows={1}
+                    style={{ flex: 1, background: "transparent", border: "none", color: C.text, fontSize: 14, outline: "none", resize: "none", lineHeight: 1.5, maxHeight: 100, overflow: "auto", fontFamily: "inherit" }}
+                  />
+                </div>
+                <button
+                  onClick={sendMessage}
+                  disabled={!msgInput.trim()}
+                  style={{ background: msgInput.trim() ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, border: "none", borderRadius: "50%", width: 44, height: 44, fontSize: 18, cursor: msgInput.trim() ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: msgInput.trim() ? "#000" : C.muted, transition: "all .2s", transform: msgInput.trim() ? "scale(1)" : "scale(0.9)" }}>
+                  ↑
+                </button>
+              </div>
             </div>
-            <div style={{ padding: "12px 20px 28px", display: "flex", gap: 10, borderTop: `1px solid ${C.border}`, background: C.card }}>
-              <Input style={{ flex: 1 }} placeholder="Type a message…" value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} />
-              <button onClick={sendMessage} style={{ background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", borderRadius: 12, width: 48, height: 48, fontSize: 20, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 700 }}>↑</button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ─── SELL ─── */}
         {tab === "sell" && (
@@ -2027,7 +2306,14 @@ export default function UniSwap() {
       <nav className="bottom-nav">
         {NAV_ITEMS.map(({ id, icon, label }) => (
           <div key={id} className="bottom-nav-item" onClick={() => handleTabChange(id)}>
-            <div style={{ fontSize: 24, filter: tab === id ? "none" : "grayscale(1) opacity(.4)", transform: tab === id ? "scale(1.1)" : "scale(1)", transition: "all .2s" }}>{icon}</div>
+            <div style={{ position: "relative", display: "inline-flex" }}>
+              <div style={{ fontSize: 24, filter: tab === id ? "none" : "grayscale(1) opacity(.4)", transform: tab === id ? "scale(1.1)" : "scale(1)", transition: "all .2s" }}>{icon}</div>
+              {id === "messages" && unreadCount > 0 && (
+                <div style={{ position: "absolute", top: -4, right: -6, background: "#FF5555", color: "#fff", borderRadius: "50%", minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", border: `2px solid ${C.sidebar}` }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </div>
+              )}
+            </div>
             <div style={{ fontSize: 10, color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400 }}>{label}</div>
             {tab === id && <div style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent }} />}
           </div>
