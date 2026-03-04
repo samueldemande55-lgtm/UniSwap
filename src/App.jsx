@@ -154,7 +154,6 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     if (!canSend) return;
     const mailto = buildMailto();
 
-    // Strategy 1: invisible anchor click — most reliable across browsers & mobile
     const a = document.createElement("a");
     a.href = mailto;
     a.style.display = "none";
@@ -162,7 +161,6 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     a.click();
     document.body.removeChild(a);
 
-    // Strategy 2: window.open fallback after small delay (catches cases where anchor silently fails)
     setTimeout(() => {
       try { window.open(mailto, "_self"); } catch {}
     }, 300);
@@ -199,9 +197,9 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
       <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 480, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
 
-        {/* Header */}
+        {/* Header — emoji removed */}
         <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>📧 Email Support</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>Email Support</div>
           <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted, fontSize: 16 }}>✕</div>
         </div>
 
@@ -244,7 +242,7 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
             <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{body.length} characters</div>
           </div>
 
-          {/* Post-open state */}
+          {/* Post-open state — emojis removed from buttons */}
           {mailOpened && (
             <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ color: C.green, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>✓ Mail app launched!</div>
@@ -253,17 +251,17 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={handleCopyMessage} style={{ flex: 1, background: copied ? `${C.green}22` : C.pill, color: copied ? C.green : C.text, border: `1px solid ${copied ? C.green + "44" : C.border}`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
-                  {copied ? "✓ Copied!" : "📋 Copy Message"}
+                  {copied ? "✓ Copied!" : "Copy Message"}
                 </button>
                 <button onClick={handleOpenMail} style={{ flex: 1, background: C.pill, color: C.accent, border: `1px solid ${C.accent}33`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  🔄 Try Again
+                  Try Again
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — emoji removed from send button */}
         <div style={{ padding: "12px 24px 24px", display: "flex", gap: 10, flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
           <button onClick={onClose} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
             Cancel
@@ -272,7 +270,6 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
             onClick={handleOpenMail}
             disabled={!canSend}
             style={{ flex: 2, background: canSend ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, color: canSend ? "#000" : C.muted, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: canSend ? "pointer" : "not-allowed", transition: "all .2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <span>📬</span>
             <span>{mailOpened ? "Open Mail Again" : "Open Mail App"}</span>
           </button>
         </div>
@@ -306,6 +303,11 @@ const GLOBAL_CSS = `
 
   /* ── Main content area ── */
   .main-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-width: 0; }
+
+  /* ── Mobile logo bar (hidden on desktop where sidebar shows) ── */
+  .mobile-logo-bar { display: none; align-items: center; gap: 8px; padding: 16px 20px 0; cursor: pointer; user-select: none; }
+  .mobile-logo-bar-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; background: linear-gradient(135deg,${C.accent},${C.warm}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  @media (max-width: 1023px) { .mobile-logo-bar { display: flex; } }
   .page-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .page-title { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; color: ${C.text}; }
 
@@ -399,9 +401,9 @@ export default function UniSwap() {
   const [resetSent, setResetSent]       = useState(false);
   const [myListings, setMyListings]     = useState([]);
   const [myListingsLoading, setMyListingsLoading] = useState(false);
-  const [myListingsTab, setMyListingsTab] = useState("active"); // active | sold
-  const [profileTab, setProfileTab]     = useState("menu"); // menu | listings
-  const [reviewModal, setReviewModal]   = useState(null); // listing to review
+  const [myListingsTab, setMyListingsTab] = useState("active");
+  const [profileTab, setProfileTab]     = useState("menu");
+  const [reviewModal, setReviewModal]   = useState(null);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover]   = useState(0);
   const [reviewText, setReviewText]     = useState("");
@@ -420,9 +422,9 @@ export default function UniSwap() {
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifPermission, setNotifPermission] = useState("default");
   const [msgAlertsEnabled, setMsgAlertsEnabled] = useState(false);
-  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0); // 0=hidden, 1=confirm, 2=type-confirm
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [supportTopic, setSupportTopic] = useState(null); // active support sub-page
+  const [supportTopic, setSupportTopic] = useState(null);
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [contactModal, setContactModal] = useState(false);
@@ -577,12 +579,10 @@ export default function UniSwap() {
     }
     setLoading(true);
     try {
-      // Update bio data
       const updates = { full_name: editName.trim(), matric_number: editMatric.trim(), bio: editBio.trim() };
       const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
       if (error) { showToast(error.message, "error"); return; }
       setProfile(p => ({ ...p, ...updates }));
-      // Update password — re-auth first with current password
       if (newPassword) {
         const userEmail = profile?.email || user?.email;
         const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email: userEmail, password: currentPassword });
@@ -622,13 +622,11 @@ export default function UniSwap() {
   const fetchPurchases = async () => {
     setPurchasesLoading(true);
     try {
-      // Purchases = listings the user has messaged about (as buyer)
       const { data: msgs } = await supabase
         .from("messages")
         .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold, profiles(full_name))")
         .eq("sender_id", user.id)
         .order("created_at", { ascending: false });
-      // Deduplicate by listing_id
       const seen = {};
       const unique = (msgs || []).filter(m => {
         if (!m.listings || seen[m.listing_id]) return false;
@@ -639,7 +637,6 @@ export default function UniSwap() {
     finally { setPurchasesLoading(false); }
   };
 
-  // Saved items — persisted in localStorage for instant access
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("uniswap_saved") || "{}");
@@ -657,7 +654,6 @@ export default function UniSwap() {
     });
   };
 
-  // Notification permission
   useEffect(() => {
     if ("Notification" in window) {
       setNotifPermission(Notification.permission);
@@ -697,14 +693,11 @@ export default function UniSwap() {
   const handleDeleteAccount = async () => {
     setLoading(true);
     try {
-      // Delete all user data in order
       await supabase.from("messages").delete().or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
       await supabase.from("reviews").delete().or(`seller_id.eq.${user.id},reviewer_id.eq.${user.id}`);
       await supabase.from("listings").delete().eq("seller_id", user.id);
       await supabase.from("profiles").delete().eq("id", user.id);
-      // Clear local storage
       try { localStorage.removeItem("uniswap_saved"); } catch {}
-      // Sign out — auth account deletion requires admin key so we sign out instead
       await supabase.auth.signOut();
       showToast("Account deleted. Goodbye 👋");
     } catch { showToast("Failed to delete. Contact support.", "error"); }
@@ -755,7 +748,6 @@ export default function UniSwap() {
         comment: reviewText.trim(),
       });
       if (error) { showToast(error.message, "error"); return; }
-      // Recalculate seller average rating
       const { data: allReviews } = await supabase
         .from("reviews").select("rating").eq("seller_id", reviewModal.seller_id);
       if (allReviews?.length) {
@@ -933,7 +925,6 @@ export default function UniSwap() {
             </div>
           )}
 
-          {/* ── FORGOT PASSWORD ── */}
           {authScreen === "reset" && !resetSent && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ textAlign: "center", marginBottom: 8 }}>
@@ -950,7 +941,6 @@ export default function UniSwap() {
             </div>
           )}
 
-          {/* ── RESET EMAIL SENT ── */}
           {authScreen === "reset" && resetSent && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16, textAlign: "center" }}>
               <div style={{ fontSize: 64, marginBottom: 4 }}>📬</div>
@@ -1000,7 +990,6 @@ export default function UniSwap() {
     </div>
   );
 
-  // ── New Password screen (after clicking reset email link) ──────────────────
   if (authScreen === "new-password") return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <style>{GLOBAL_CSS}</style>
@@ -1026,14 +1015,12 @@ export default function UniSwap() {
               <Input type={showPassword ? "text" : "password"} placeholder="Repeat new password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} onKeyDown={e => e.key === "Enter" && handleNewPassword()} style={{ paddingRight: 48 }} />
               <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
             </div>
-            {/* Password match indicator */}
             {newPasswordConfirm && (
               <div style={{ marginTop: 6, fontSize: 12, color: newPassword === newPasswordConfirm ? C.green : "#FF5555", fontWeight: 600 }}>
                 {newPassword === newPasswordConfirm ? "✓ Passwords match" : "✕ Passwords do not match"}
               </div>
             )}
           </div>
-          {/* Strength hint */}
           {newPassword && (
             <div style={{ background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Password strength</div>
@@ -1081,7 +1068,7 @@ export default function UniSwap() {
       )}
       {contactModal && <ContactEmailModal userEmail={profile?.email || user?.email} onClose={() => setContactModal(false)} />}
       <aside className="sidebar">
-        <div className="sidebar-logo">
+        <div className="sidebar-logo" onClick={() => handleTabChange("home")} style={{ cursor: "pointer" }}>
           <span style={{ fontSize: 26 }}>🛒</span>
           <span className="sidebar-logo-text">UniSwap</span>
         </div>
@@ -1104,6 +1091,12 @@ export default function UniSwap() {
 
       {/* ── MAIN CONTENT ── */}
       <main className="main-content">
+
+        {/* Mobile-only logo — navigates to home from anywhere */}
+        <div className="mobile-logo-bar" onClick={() => handleTabChange("home")}>
+          <span style={{ fontSize: 22 }}>🛒</span>
+          <span className="mobile-logo-bar-text">UniSwap</span>
+        </div>
 
         {/* ─── HOME ─── */}
         {tab === "home" && !selectedListing && (() => {
@@ -1128,7 +1121,6 @@ export default function UniSwap() {
               <Avatar initials={initials} size={42} src={avatarUrl} />
             </div>
 
-            {/* Search bar */}
             <div style={{ padding: "0 16px 16px" }}>
               <div style={{ position: "relative" }}>
                 <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: searchFocused ? C.accent : C.muted, display: "flex", alignItems: "center", transition: "color .2s" }}>
@@ -1147,7 +1139,6 @@ export default function UniSwap() {
                 )}
               </div>
 
-              {/* Search result count */}
               {searchQuery.trim() && (
                 <div style={{ marginTop: 8, color: C.muted, fontSize: 13 }}>
                   {filtered.length === 0 ? (
@@ -1159,14 +1150,12 @@ export default function UniSwap() {
               )}
             </div>
 
-            {/* Category filter — hide when searching */}
             {!searchQuery.trim() && (
               <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 16px", scrollbarWidth: "none" }}>
                 {CATEGORIES.map(c => <Pill key={c} active={activeCat === c} onClick={() => setActiveCat(c)}>{c}</Pill>)}
               </div>
             )}
 
-            {/* Listings grid */}
             {listingsLoading ? <Loader /> : (
               <div className="listing-grid">
                 {filtered.length === 0 && (
@@ -1223,7 +1212,6 @@ export default function UniSwap() {
                 <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }} style={{ marginLeft: "auto", fontSize: 22, cursor: "pointer" }}>{savedItems[selectedListing.id] ? "❤️" : "🤍"}</div>
               </div>
               <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
-                {/* Photo gallery */}
                 {imgs.length > 0 ? (
                   <div>
                     <div style={{ height: 260, background: C.pill, position: "relative", overflow: "hidden" }}>
@@ -1273,7 +1261,6 @@ export default function UniSwap() {
                   </div>
                   {selectedListing.description && <div style={{ marginTop: 16, color: C.muted, fontSize: 14, lineHeight: 1.8 }}>{selectedListing.description}</div>}
 
-                  {/* Reviews section */}
                   {sellerReviews.length > 0 && (
                     <div style={{ marginTop: 24 }}>
                       <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 12 }}>⭐ Seller Reviews ({sellerReviews.length})</div>
@@ -1373,7 +1360,6 @@ export default function UniSwap() {
             <div className="form-page">
               <div style={{ color: C.muted, fontSize: 15, marginBottom: 28 }}>Turn your unused stuff into cash 💰</div>
 
-              {/* Photos */}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ color: C.muted, fontSize: 12, marginBottom: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Photos ({sellPhotos.length}/5)</div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1395,7 +1381,6 @@ export default function UniSwap() {
                 <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>First photo is the main thumbnail. Max 5 photos.</div>
               </div>
 
-              {/* Upload progress */}
               {loading && uploadProgress > 0 && uploadProgress < 100 && (
                 <div style={{ marginBottom: 20, padding: 16, background: C.pill, borderRadius: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1408,7 +1393,6 @@ export default function UniSwap() {
                 </div>
               )}
 
-              {/* Two-column on desktop */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
                 <div>
                   <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Item Name</div>
@@ -1443,13 +1427,10 @@ export default function UniSwap() {
             <div className="page-header"><div className="page-title">Account</div></div>
             <div className="form-page">
 
-              {/* Profile card */}
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "28px 24px", marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                  {/* Tappable avatar with camera badge */}
                   <div style={{ position: "relative", cursor: "pointer", flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
                     <Avatar initials={initials} size={72} src={avatarUrl} />
-                    {/* Hover/tap overlay */}
                     <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", opacity: avatarUploading ? 1 : 0, transition: "opacity .2s" }}
                       onMouseEnter={e => e.currentTarget.style.opacity = "1"}
                       onMouseLeave={e => { if (!avatarUploading) e.currentTarget.style.opacity = "0"; }}>
@@ -1458,7 +1439,6 @@ export default function UniSwap() {
                         : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                       }
                     </div>
-                    {/* Camera badge */}
                     <div style={{ position: "absolute", bottom: 1, right: 1, background: C.accent, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.card}`, pointerEvents: "none" }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                     </div>
@@ -1471,7 +1451,6 @@ export default function UniSwap() {
                     {avatarUploading && <div style={{ color: C.accent, fontSize: 11, marginTop: 4, fontWeight: 600 }}>Uploading photo…</div>}
                   </div>
                 </div>
-                {/* Stats row */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
                   {[
                     [myListings.filter(l => !l.is_sold).length, "Active"],
@@ -1490,10 +1469,9 @@ export default function UniSwap() {
                 {profile?.bio && <div style={{ color: C.muted, fontSize: 13, marginTop: 14, lineHeight: 1.6, textAlign: "left" }}>{profile.bio}</div>}
               </div>
 
-              {/* Tab switcher — hidden when in edit mode */}
               {profileTab !== "edit" && (
                 <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
-                  {[["menu", "⚙️ Account"], ["listings", "📦 Listings"], ["reviews", "⭐ Reviews"]].map(([id, label]) => (
+                  {[["menu", "Account"], ["listings", "Listings"], ["reviews", "Reviews"]].map(([id, label]) => (
                     <div key={id} onClick={() => { setProfileTab(id); if (id === "reviews") fetchSellerReviews(user.id); }} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
                   ))}
                 </div>
@@ -1507,7 +1485,6 @@ export default function UniSwap() {
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Edit Profile</div>
                   </div>
 
-                  {/* Bio data card */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Full Name</div>
@@ -1532,15 +1509,12 @@ export default function UniSwap() {
                     </div>
                   </div>
 
-                  {/* Change Password */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                       <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontWeight: 700, fontSize: 15 }}>🔐 Change Password</div>
                       <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Leave blank to keep your current password.</div>
                     </div>
                     <div style={{ height: 1, background: C.border }} />
-
-                    {/* Current password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Current Password</div>
                       <div style={{ position: "relative" }}>
@@ -1548,17 +1522,13 @@ export default function UniSwap() {
                         <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
                       </div>
                     </div>
-
                     <div style={{ height: 1, background: `${C.border}88` }} />
-
-                    {/* New password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>New Password</div>
                       <div style={{ position: "relative" }}>
                         <Input type={showPassword ? "text" : "password"} placeholder="Enter new password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ paddingRight: 48 }} />
                         <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
                       </div>
-                      {/* Strength meter */}
                       {newPassword.length > 0 && (
                         <div style={{ marginTop: 8, background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
                           <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
@@ -1572,8 +1542,6 @@ export default function UniSwap() {
                         </div>
                       )}
                     </div>
-
-                    {/* Confirm password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Confirm New Password</div>
                       <div style={{ position: "relative" }}>
@@ -1592,6 +1560,7 @@ export default function UniSwap() {
                   <Btn onClick={() => setProfileTab("menu")}>Cancel</Btn>
                 </div>
               )}
+
               {profileTab === "menu" && (
                 <>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
@@ -1697,13 +1666,10 @@ export default function UniSwap() {
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Settings</div>
                   </div>
 
-                  {/* ── Notifications ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Notifications</div>
                     </div>
-
-                    {/* Push notifications */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>Push Notifications</div>
@@ -1715,8 +1681,6 @@ export default function UniSwap() {
                         <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
                       </div>
                     </div>
-
-                    {/* Message alerts — own independent toggle */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, borderTop: `1px solid ${C.border}22` }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: notifEnabled ? C.text : C.muted, fontSize: 15, fontWeight: 500 }}>New Message Alerts</div>
@@ -1730,7 +1694,6 @@ export default function UniSwap() {
                     </div>
                   </div>
 
-                  {/* ── About ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>About</div>
@@ -1744,13 +1707,10 @@ export default function UniSwap() {
                     </div>
                   </div>
 
-                  {/* ── Danger Zone ── */}
                   <div style={{ background: C.card, border: `1px solid #FF555533`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid #FF555522` }}>
                       <div style={{ color: "#FF5555", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Danger Zone</div>
                     </div>
-
-                    {/* Step 0 — initial delete button */}
                     {deleteConfirmStep === 0 && (
                       <div onClick={() => setDeleteConfirmStep(1)} style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = "#FF555511"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                         <div style={{ flex: 1 }}>
@@ -1760,8 +1720,6 @@ export default function UniSwap() {
                         <span style={{ color: "#FF5555", fontSize: 18 }}>›</span>
                       </div>
                     )}
-
-                    {/* Step 1 — are you sure? */}
                     {deleteConfirmStep === 1 && (
                       <div style={{ padding: "20px" }}>
                         <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Are you sure?</div>
@@ -1781,8 +1739,6 @@ export default function UniSwap() {
                         </div>
                       </div>
                     )}
-
-                    {/* Step 2 — type DELETE to confirm */}
                     {deleteConfirmStep === 2 && (
                       <div style={{ padding: "20px" }}>
                         <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Final confirmation</div>
@@ -1820,13 +1776,12 @@ export default function UniSwap() {
                   </div>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     {[
-                      { title: "Report a listing",    sub: "Flag inappropriate or fraudulent content",   icon: "🚩", placeholder: "Which listing? What's the issue?" },
-                      { title: "Account issues",       sub: "Login problems, account recovery",            icon: "🔐", placeholder: "Describe your account issue…" },
-                      { title: "Transaction dispute",  sub: "Issues with a buyer or seller",               icon: "⚖️", placeholder: "Describe the transaction and the problem…" },
-                      { title: "Suggest a feature",   sub: "Help us improve UniSwap",                     icon: "💡", placeholder: "What feature would you love to see?" },
+                      { title: "Report a listing",   sub: "Flag inappropriate or fraudulent content", placeholder: "Which listing? What's the issue?" },
+                      { title: "Account issues",      sub: "Login problems, account recovery",          placeholder: "Describe your account issue…" },
+                      { title: "Transaction dispute", sub: "Issues with a buyer or seller",             placeholder: "Describe the transaction and the problem…" },
+                      { title: "Suggest a feature",  sub: "Help us improve UniSwap",                   placeholder: "What feature would you love to see?" },
                     ].map((topic, i, arr) => (
                       <div key={topic.title} onClick={() => { setSupportTopic(topic); setSupportSubject(topic.title); setSupportMessage(""); }} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <span style={{ fontSize: 22, width: 28 }}>{topic.icon}</span>
                         <div style={{ flex: 1 }}>
                           <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{topic.title}</div>
                           <div style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{topic.sub}</div>
@@ -1835,7 +1790,6 @@ export default function UniSwap() {
                       </div>
                     ))}
                   </div>
-                  {/* Contact email */}
                   <div onClick={() => setContactModal(true)} style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16, textAlign: "center", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = `${C.accent}18`} onMouseLeave={e => e.currentTarget.style.background = `${C.accent}0D`}>
                     <div style={{ color: C.muted, fontSize: 13 }}>Need urgent help? Email us directly</div>
                     <div style={{ color: C.accent, fontWeight: 700, fontSize: 15, marginTop: 6 }}>support@uniswap.campus →</div>
@@ -1849,13 +1803,12 @@ export default function UniSwap() {
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
                     <div onClick={() => setSupportTopic(null)} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
                     <div>
-                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>{supportTopic.icon} {supportTopic.title}</div>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>{supportTopic.title}</div>
                       <div style={{ color: C.muted, fontSize: 13 }}>{supportTopic.sub}</div>
                     </div>
                   </div>
 
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "20px", display: "flex", flexDirection: "column", gap: 14 }}>
-                    {/* Auto-filled user info */}
                     <div style={{ background: C.pill, borderRadius: 12, padding: "12px 14px" }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Submitting as</div>
                       <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{profile?.full_name}</div>
@@ -1880,7 +1833,6 @@ export default function UniSwap() {
                     {loading ? "Sending…" : "Send Request →"}
                   </button>
 
-                  {/* Also offer email fallback */}
                   <div style={{ textAlign: "center" }}>
                     <span style={{ color: C.muted, fontSize: 13 }}>Or </span>
                     <span onClick={() => setContactModal(true)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>email us directly</span>
@@ -1891,7 +1843,6 @@ export default function UniSwap() {
               {/* ── MY LISTINGS DASHBOARD ── */}
               {profileTab === "listings" && (
                 <>
-                  {/* Active / Sold tabs */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                     {[["active", `Active (${myListings.filter(l => !l.is_sold).length})`], ["sold", `Sold (${myListings.filter(l => l.is_sold).length})`]].map(([id, label]) => (
                       <Pill key={id} active={myListingsTab === id} onClick={() => setMyListingsTab(id)}>{label}</Pill>
@@ -1917,12 +1868,10 @@ export default function UniSwap() {
                           const imgs = getImages(l);
                           return (
                             <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", display: "flex", gap: 0 }}>
-                              {/* Thumbnail */}
                               <div style={{ width: 90, flexShrink: 0, background: C.pill, position: "relative" }}>
                                 {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>📦</div>}
                                 {l.is_sold && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: C.green, fontWeight: 800, fontSize: 13, background: `${C.green}22`, border: `1px solid ${C.green}`, borderRadius: 8, padding: "4px 8px" }}>SOLD</div></div>}
                               </div>
-                              {/* Details */}
                               <div style={{ flex: 1, padding: "14px 16px", minWidth: 0 }}>
                                 <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
                                 <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 2 }}>₦{l.price?.toLocaleString()}</div>
@@ -1931,11 +1880,10 @@ export default function UniSwap() {
                                   <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "3px 8px", borderRadius: 10 }}>{l.condition}</span>
                                   <span style={{ color: C.muted, fontSize: 11, padding: "3px 0" }}>{new Date(l.created_at).toLocaleDateString()}</span>
                                 </div>
-                                {/* Action buttons */}
                                 {!l.is_sold && (
                                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                                     <div onClick={() => handleMarkSold(l.id)} style={{ background: `${C.green}18`, border: `1px solid ${C.green}44`, color: C.green, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap" }}>✓ Mark Sold</div>
-                                    <div onClick={() => handleDeleteListing(l.id)} style={{ background: "#FF555518", border: "1px solid #FF555544", color: "#FF5555", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer" }}>🗑 Delete</div>
+                                    <div onClick={() => handleDeleteListing(l.id)} style={{ background: "#FF555518", border: "1px solid #FF555544", color: "#FF5555", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer" }}>Delete</div>
                                   </div>
                                 )}
                               </div>
@@ -1959,7 +1907,6 @@ export default function UniSwap() {
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      {/* Average summary */}
                       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px", textAlign: "center", marginBottom: 4 }}>
                         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 48, fontWeight: 800, color: "#FFD700" }}>
                           {(sellerReviews.reduce((s, r) => s + r.rating, 0) / sellerReviews.length).toFixed(1)}
@@ -2021,4 +1968,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                 }
+}
