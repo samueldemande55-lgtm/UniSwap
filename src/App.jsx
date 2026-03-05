@@ -699,7 +699,7 @@ export default function UniSwap() {
     try {
       const { data: msgs } = await supabase
         .from("messages")
-        .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold, profiles(full_name))")
+        .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold)")
         .eq("sender_id", user.id)
         .order("created_at", { ascending: false });
       const seen = {};
@@ -800,12 +800,26 @@ export default function UniSwap() {
   const fetchSellerReviews = async (sellerId) => {
     setReviewsLoading(true);
     try {
-      const { data } = await supabase
+      const { data: reviewData } = await supabase
         .from("reviews")
-        .select("*, profiles!reviewer_id(full_name)")
+        .select("*")
         .eq("seller_id", sellerId)
         .order("created_at", { ascending: false });
-      setSellerReviews(data || []);
+      const reviews = reviewData || [];
+      // Enrich with reviewer names separately
+      const reviewerIds = [...new Set(reviews.map(r => r.reviewer_id).filter(Boolean))];
+      let reviewerMap = {};
+      if (reviewerIds.length > 0) {
+        try {
+          const { data: rProfiles } = await supabase
+            .from("profiles").select("id, full_name").in("id", reviewerIds);
+          (rProfiles || []).forEach(p => { reviewerMap[p.id] = p; });
+        } catch {}
+      }
+      setSellerReviews(reviews.map(r => ({
+        ...r,
+        profiles: reviewerMap[r.reviewer_id] || null,
+      })));
     } catch { setSellerReviews([]); }
     finally { setReviewsLoading(false); }
   };
@@ -846,16 +860,16 @@ export default function UniSwap() {
       // the column default wasn't set — both mean "not sold")
       let q = supabase
         .from("listings")
-        .select("*, profiles(full_name, avatar_url)")
+        .select("*")
         .or("is_sold.eq.false,is_sold.is.null")
         .order("created_at", { ascending: false });
       if (activeCat !== "All") q = q.eq("category", activeCat);
       const { data, error } = await q;
       if (error) { setListings([]); return; }
-      // Normalise image_urls — accept both real arrays and JSON strings
+      // Normalise image_urls and is_sold
       const normalised = (data || []).map(l => ({
         ...l,
-        is_sold: false, // normalise null → false so UI never shows SOLD badge
+        is_sold: l.is_sold === true ? true : false,
         image_urls: (() => {
           try {
             if (!l.image_urls) return [];
@@ -864,7 +878,24 @@ export default function UniSwap() {
           } catch { return []; }
         })(),
       }));
-      setListings(normalised);
+
+      // Enrich with seller profile data separately (avoids join schema issues)
+      const sellerIds = [...new Set(normalised.map(l => l.seller_id).filter(Boolean))];
+      let profileMap = {};
+      if (sellerIds.length > 0) {
+        try {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("id, full_name, avatar_url")
+            .in("id", sellerIds);
+          (profileData || []).forEach(p => { profileMap[p.id] = p; });
+        } catch { /* profiles table may not exist yet — show listings without names */ }
+      }
+
+      setListings(normalised.map(l => ({
+        ...l,
+        profiles: profileMap[l.seller_id] || null,
+      })));
     } catch { setListings([]); }
     finally { setListingsLoading(false); }
   };
@@ -914,7 +945,7 @@ export default function UniSwap() {
       const { data: listing, error } = await supabase
         .from("listings")
         .insert(insertPayload)
-        .select("*, profiles(full_name, avatar_url)")
+        .select("*")
         .single();
       if (error) {
         showToast(error.message || "Failed to post listing. Check your Supabase tables are created.", "error");
@@ -2393,4 +2424,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                                                                }
+              }
