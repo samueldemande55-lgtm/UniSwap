@@ -595,7 +595,8 @@ export default function UniSwap() {
     setMyListingsLoading(true);
     try {
       const { data } = await supabase.from("listings").select("*").eq("seller_id", user.id).order("created_at", { ascending: false });
-      setMyListings(data || []);
+      // Normalise is_sold null → false so new listings don't show as sold
+      setMyListings((data || []).map(l => ({ ...l, is_sold: l.is_sold === true })));
     } catch { setMyListings([]); }
     finally { setMyListingsLoading(false); }
   };
@@ -606,6 +607,7 @@ export default function UniSwap() {
     const { error } = await supabase.from("listings").update({ is_sold: true }).eq("id", id);
     if (!error) {
       setMyListings(p => p.map(l => l.id === id ? { ...l, is_sold: true } : l));
+      setListings(p => p.filter(l => l.id !== id)); // remove from home feed immediately
       fetchListings();
       showToast("Marked as sold! 🎉");
     } else { showToast("Failed to update. Try again.", "error"); }
@@ -840,10 +842,12 @@ export default function UniSwap() {
   const fetchListings = async () => {
     setListingsLoading(true);
     try {
+      // Use .or() to catch is_sold=false AND is_sold=null (null happens when
+      // the column default wasn't set — both mean "not sold")
       let q = supabase
         .from("listings")
         .select("*, profiles(full_name, avatar_url)")
-        .eq("is_sold", false)
+        .or("is_sold.eq.false,is_sold.is.null")
         .order("created_at", { ascending: false });
       if (activeCat !== "All") q = q.eq("category", activeCat);
       const { data, error } = await q;
@@ -851,6 +855,7 @@ export default function UniSwap() {
       // Normalise image_urls — accept both real arrays and JSON strings
       const normalised = (data || []).map(l => ({
         ...l,
+        is_sold: false, // normalise null → false so UI never shows SOLD badge
         image_urls: (() => {
           try {
             if (!l.image_urls) return [];
@@ -895,30 +900,57 @@ export default function UniSwap() {
     if (!sellTitle || !sellPrice) return showToast("Title and price required", "error");
     setLoading(true); setUploadProgress(0);
     try {
-      const { data: listing, error } = await supabase.from("listings")
-        .insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false, image_urls: [] })
-        .select().single();
+      // Explicit is_sold: false — never rely on DB default
+      const insertPayload = {
+        title: sellTitle.trim(),
+        price: parseInt(sellPrice),
+        category: sellCat,
+        condition: sellCond,
+        description: sellDesc.trim(),
+        seller_id: user.id,
+        is_sold: false,
+        image_urls: [],
+      };
+      const { data: listing, error } = await supabase
+        .from("listings")
+        .insert(insertPayload)
+        .select("*, profiles(full_name, avatar_url)")
+        .single();
       if (error) {
         showToast(error.message || "Failed to post listing. Check your Supabase tables are created.", "error");
         return;
       }
-      // Upload photos and save as real array (not JSON string)
+
+      // Upload photos and save as a real array
       let finalUrls = [];
       if (sellPhotos.length > 0) {
         finalUrls = await uploadPhotos(listing.id);
         await supabase.from("listings").update({ image_urls: finalUrls }).eq("id", listing.id);
       }
+
       showToast("Listing posted! 🎉");
-      // Clear form
-      setSellTitle(""); setSellPrice(""); setSellDesc(""); setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
-      // Reset category filter to "All" so the new listing is always visible
+
+      // Clear form state
+      setSellTitle(""); setSellPrice(""); setSellDesc("");
+      setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
+
+      // Reset to "All" category so listing is always visible on home
       setActiveCat("All");
-      // Switch to home first, then fetch so listings refresh on the correct tab
+
+      // Optimistically prepend the new listing to home feed immediately
+      const newListing = { ...listing, image_urls: finalUrls, is_sold: false };
+      setListings(prev => [newListing, ...prev.filter(l => l.id !== newListing.id)]);
+
+      // Navigate home
       setTab("home");
-      // Small delay to let state settle before fetching
-      setTimeout(() => fetchListings(), 100);
-    } catch (e) { showToast(e?.message || "Failed to post. Try again.", "error"); }
-    finally { setLoading(false); }
+
+      // Then do a real re-fetch in the background to get accurate server state
+      setTimeout(() => fetchListings(), 500);
+    } catch (e) {
+      showToast(e?.message || "Failed to post. Try again.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -2361,4 +2393,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                         }
+                                                                }
