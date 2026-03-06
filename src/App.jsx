@@ -394,6 +394,8 @@ export default function UniSwap() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [activePhoto, setActivePhoto]   = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [sellerProfile, setSellerProfile] = useState(null);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [newPassword, setNewPassword]   = useState("");
@@ -795,6 +797,22 @@ export default function UniSwap() {
       setSupportSubject(""); setSupportMessage(""); setSupportTopic(null);
     } catch { showToast("Sent! We'll be in touch shortly ✅"); setSupportSubject(""); setSupportMessage(""); setSupportTopic(null); }
     finally { setLoading(false); }
+  };
+
+  const fetchSellerProfile = async (sellerId) => {
+    if (!sellerId) return;
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", sellerId).single();
+      if (data) setSellerProfile(data);
+      else {
+        // fallback: get from auth metadata if same user
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id === sellerId) {
+          const meta = authData.user.user_metadata || {};
+          setSellerProfile({ id: sellerId, full_name: meta.full_name || "User", avatar_url: meta.avatar_url || "", rating: meta.rating || 0, bio: meta.bio || "" });
+        }
+      }
+    } catch { setSellerProfile(null); }
   };
 
   const fetchSellerReviews = async (sellerId) => {
@@ -1474,7 +1492,7 @@ export default function UniSwap() {
                 {filtered.map(l => {
                   const imgs = getImages(l);
                   return (
-                    <div key={l.id} className="listing-card" onClick={() => { setSelectedListing(l); setActivePhoto(0); }}>
+                    <div key={l.id} className="listing-card" onClick={() => { setSelectedListing(l); setActivePhoto(0); setSellerProfile(null); setSellerReviews([]); fetchSellerProfile(l.seller_id); fetchSellerReviews(l.seller_id); }}>
                       <div style={{ height: 140, background: C.pill, position: "relative", overflow: "hidden" }}>
                         {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>📦</div>}
                         <div style={{ position: "absolute", top: 8, left: 8, background: `${C.bg}DD`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: C.muted, fontWeight: 600 }}>{l.condition}</div>
@@ -1500,89 +1518,211 @@ export default function UniSwap() {
         {/* ─── LISTING DETAIL ─── */}
         {tab === "home" && selectedListing && (() => {
           const imgs = getImages(selectedListing);
+          const seller = sellerProfile || selectedListing.profiles;
+          const sellerName = seller?.full_name || "Campus Seller";
+          const sellerInitials = sellerName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
+          const sellerRating = seller?.rating || 0;
+          const postedDate = new Date(selectedListing.created_at);
+          const daysAgo = Math.floor((Date.now() - postedDate) / 86400000);
+          const dateStr = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
+          const isMine = selectedListing.seller_id === user?.id;
+
           return (
-            <div className="detail-panel">
-              <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card }}>
-                <div onClick={() => { setSelectedListing(null); setActivePhoto(0); }} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%" }}>←</div>
-                <span style={{ color: C.text, fontWeight: 700, fontSize: 16 }}>Listing Detail</span>
-                <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }} style={{ marginLeft: "auto", fontSize: 22, cursor: "pointer" }}>{savedItems[selectedListing.id] ? "❤️" : "🤍"}</div>
+            <div className="detail-panel" style={{ position: "relative" }}>
+
+              {/* ── Lightbox fullscreen viewer ── */}
+              {lightboxOpen && imgs.length > 0 && (
+                <div onClick={() => setLightboxOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.96)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div onClick={e => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 600, maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <img src={imgs[activePhoto]} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12 }} />
+                    {imgs.length > 1 && (
+                      <>
+                        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                          {imgs.map((_, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: i === activePhoto ? 24 : 8, height: 8, borderRadius: 4, background: i === activePhoto ? C.accent : "#ffffff55", cursor: "pointer", transition: "all .2s" }} />)}
+                        </div>
+                        {activePhoto > 0 && <div onClick={() => setActivePhoto(p => p-1)} style={{ position: "absolute", left: 8, top: "40%", background: "rgba(255,255,255,.15)", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 22, color: "#fff" }}>‹</div>}
+                        {activePhoto < imgs.length-1 && <div onClick={() => setActivePhoto(p => p+1)} style={{ position: "absolute", right: 8, top: "40%", background: "rgba(255,255,255,.15)", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 22, color: "#fff" }}>›</div>}
+                      </>
+                    )}
+                    <div style={{ color: "#ffffff88", fontSize: 13, marginTop: 10 }}>{activePhoto + 1} / {imgs.length} — tap outside to close</div>
+                  </div>
+                  <div onClick={() => setLightboxOpen(false)} style={{ position: "absolute", top: 20, right: 20, color: "#fff", fontSize: 28, cursor: "pointer", background: "rgba(255,255,255,.1)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</div>
+                </div>
+              )}
+
+              {/* ── Header bar ── */}
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 10, background: C.card, flexShrink: 0 }}>
+                <div onClick={() => { setSelectedListing(null); setActivePhoto(0); setSellerProfile(null); setSellerReviews([]); }}
+                  style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0, fontSize: 18 }}>←</div>
+                <span style={{ color: C.text, fontWeight: 700, fontSize: 15, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedListing.title}</span>
+                {/* Share button */}
+                <div onClick={() => {
+                  const text = `Check out "${selectedListing.title}" for ₦${selectedListing.price?.toLocaleString()} on UniSwap!`;
+                  if (navigator.share) { navigator.share({ title: selectedListing.title, text }); }
+                  else { navigator.clipboard?.writeText(text).then(() => showToast("Link copied!")); }
+                }} style={{ width: 36, height: 36, borderRadius: "50%", background: C.pill, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                </div>
+                {/* Save button */}
+                <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }}
+                  style={{ width: 36, height: 36, borderRadius: "50%", background: savedItems[selectedListing.id] ? `${C.warm}22` : C.pill, border: savedItems[selectedListing.id] ? `1px solid ${C.warm}55` : "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all .2s" }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill={savedItems[selectedListing.id] ? C.warm : "none"} stroke={savedItems[selectedListing.id] ? C.warm : C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                </div>
               </div>
-              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
+
+              {/* ── Scrollable content ── */}
+              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 110 }}>
+
+                {/* Photo gallery */}
                 {imgs.length > 0 ? (
                   <div>
-                    <div style={{ height: 260, background: C.pill, position: "relative", overflow: "hidden" }}>
+                    {/* Main photo */}
+                    <div onClick={() => setLightboxOpen(true)} style={{ height: 280, background: C.pill, position: "relative", overflow: "hidden", cursor: "zoom-in" }}>
                       <img src={imgs[activePhoto]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      {/* Zoom hint */}
+                      <div style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,.5)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#fff", display: "flex", alignItems: "center", gap: 4 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                        Tap to zoom
+                      </div>
+                      {/* Nav arrows */}
                       {imgs.length > 1 && <>
-                        <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 6 }}>
-                          {imgs.map((_, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: i === activePhoto ? 22 : 7, height: 7, borderRadius: 4, background: i === activePhoto ? C.accent : "#ffffff88", transition: "all .2s", cursor: "pointer" }} />)}
-                        </div>
-                        {activePhoto > 0 && <div onClick={() => setActivePhoto(p => p - 1)} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.6)", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 18 }}>‹</div>}
-                        {activePhoto < imgs.length - 1 && <div onClick={() => setActivePhoto(p => p + 1)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.6)", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 18 }}>›</div>}
+                        {activePhoto > 0 && <div onClick={e => { e.stopPropagation(); setActivePhoto(p => p-1); }} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.55)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20 }}>‹</div>}
+                        {activePhoto < imgs.length-1 && <div onClick={e => { e.stopPropagation(); setActivePhoto(p => p+1); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.55)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20 }}>›</div>}
+                        <div style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(0,0,0,.55)", borderRadius: 12, padding: "3px 10px", fontSize: 12, color: "#fff", fontWeight: 600 }}>{activePhoto+1}/{imgs.length}</div>
                       </>}
                     </div>
+                    {/* Thumbnail strip */}
                     {imgs.length > 1 && (
-                      <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto" }}>
-                        {imgs.map((url, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", border: `2px solid ${i === activePhoto ? C.accent : "transparent"}`, flexShrink: 0, cursor: "pointer" }}><img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></div>)}
+                      <div style={{ display: "flex", gap: 8, padding: "10px 16px", overflowX: "auto", scrollbarWidth: "none" }}>
+                        {imgs.map((url, i) => (
+                          <div key={i} onClick={() => setActivePhoto(i)} style={{ width: 60, height: 60, borderRadius: 10, overflow: "hidden", border: `2.5px solid ${i === activePhoto ? C.accent : "transparent"}`, flexShrink: 0, cursor: "pointer", transition: "border .15s", boxShadow: i === activePhoto ? `0 0 0 1px ${C.accent}44` : "none" }}>
+                            <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div style={{ height: 220, background: `${C.accent}0D`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80 }}>📦</div>
+                  <div style={{ height: 220, background: `${C.accent}0D`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, flexDirection: "column", gap: 10 }}>
+                    <span>📦</span>
+                    <span style={{ fontSize: 13, color: C.muted }}>No photos</span>
+                  </div>
                 )}
-                <div style={{ padding: "20px 20px 0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 24, fontWeight: 800, lineHeight: 1.3 }}>{selectedListing.title}</div>
-                      <div style={{ color: C.accent, fontSize: 26, fontWeight: 800, marginTop: 6 }}>₦{selectedListing.price?.toLocaleString()}</div>
-                    </div>
-                    <div style={{ background: `${C.green}22`, color: C.green, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{selectedListing.condition}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-                    <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>📦 {selectedListing.category}</div>
-                    <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>🕐 {new Date(selectedListing.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ marginTop: 20, padding: 16, background: C.pill, borderRadius: 16, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}
-                    onClick={() => { fetchSellerReviews(selectedListing.seller_id); }}>
-                    <Avatar initials={(selectedListing.profiles?.full_name || "??").slice(0, 2).toUpperCase()} size={46} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>{selectedListing.profiles?.full_name || "Unknown"}</div>
-                      <div style={{ color: C.green, fontSize: 12, marginTop: 2 }}>✓ Campus verified seller</div>
-                      {selectedListing.profiles?.rating > 0 && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                          <StarRating rating={Math.round(selectedListing.profiles.rating)} size={14} />
-                          <span style={{ color: C.muted, fontSize: 12 }}>{selectedListing.profiles.rating.toFixed(1)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {selectedListing.description && <div style={{ marginTop: 16, color: C.muted, fontSize: 14, lineHeight: 1.8 }}>{selectedListing.description}</div>}
 
-                  {sellerReviews.length > 0 && (
-                    <div style={{ marginTop: 24 }}>
-                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 12 }}>⭐ Seller Reviews ({sellerReviews.length})</div>
-                      {reviewsLoading ? <Loader /> : sellerReviews.map(r => (
-                        <div key={r.id} style={{ background: C.pill, borderRadius: 14, padding: "14px 16px", marginBottom: 10 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={28} />
-                              <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</span>
-                            </div>
-                            <StarRating rating={r.rating} size={13} />
-                          </div>
-                          <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{r.comment}</div>
-                          <div style={{ color: C.border, fontSize: 11, marginTop: 6 }}>{new Date(r.created_at).toLocaleDateString()}</div>
-                        </div>
-                      ))}
+                <div style={{ padding: "18px 18px 0" }}>
+
+                  {/* Title, price, condition */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, lineHeight: 1.3, marginBottom: 6 }}>{selectedListing.title}</div>
+                      <div style={{ color: C.accent, fontSize: 28, fontWeight: 800 }}>₦{selectedListing.price?.toLocaleString()}</div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                      <div style={{ background: `${C.green}22`, color: C.green, padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{selectedListing.condition}</div>
+                      <div style={{ background: C.pill, color: C.muted, padding: "5px 12px", borderRadius: 20, fontSize: 11, whiteSpace: "nowrap" }}>{selectedListing.category}</div>
+                    </div>
+                  </div>
+
+                  {/* Meta row */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+                    <div style={{ background: C.pill, borderRadius: 20, padding: "5px 12px", fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 5 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      {dateStr}
+                    </div>
+                    {savedItems[selectedListing.id] && (
+                      <div style={{ background: `${C.warm}18`, color: C.warm, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600 }}>Saved</div>
+                    )}
+                  </div>
+
+                  {/* Description */}
+                  {selectedListing.description && (
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 8 }}>About this item</div>
+                      <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.8, background: C.pill, borderRadius: 14, padding: "14px 16px" }}>{selectedListing.description}</div>
                     </div>
                   )}
+
+                  {/* Seller card */}
+                  <div style={{ background: C.pill, borderRadius: 18, padding: "16px", marginBottom: 20, border: `1px solid ${C.border}` }}>
+                    <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Seller</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      <Avatar initials={sellerInitials} size={52} src={seller?.avatar_url} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: C.text, fontWeight: 800, fontSize: 16, marginBottom: 3 }}>{sellerName}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green} stroke="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                          <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>Campus verified</span>
+                        </div>
+                        {sellerRating > 0 ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <StarRating rating={Math.round(sellerRating)} size={13} />
+                            <span style={{ color: C.muted, fontSize: 12 }}>{sellerRating.toFixed(1)} · {sellerReviews.length} review{sellerReviews.length !== 1 ? "s" : ""}</span>
+                          </div>
+                        ) : (
+                          <div style={{ color: C.muted, fontSize: 12 }}>No reviews yet</div>
+                        )}
+                      </div>
+                    </div>
+                    {seller?.bio && (
+                      <div style={{ marginTop: 12, color: C.muted, fontSize: 13, lineHeight: 1.6, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>{seller.bio}</div>
+                    )}
+                  </div>
+
+                  {/* Reviews section */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>
+                        Reviews {sellerReviews.length > 0 && <span style={{ color: C.muted, fontWeight: 400, fontSize: 13 }}>({sellerReviews.length})</span>}
+                      </div>
+                      {!isMine && sellerReviews.length > 0 && (
+                        <div onClick={() => setReviewModal(selectedListing)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Write review</div>
+                      )}
+                    </div>
+                    {reviewsLoading ? <Loader /> : sellerReviews.length === 0 ? (
+                      <div style={{ background: C.pill, borderRadius: 14, padding: "20px", textAlign: "center" }}>
+                        <div style={{ fontSize: 28, marginBottom: 8 }}>⭐</div>
+                        <div style={{ color: C.muted, fontSize: 14 }}>No reviews yet for this seller</div>
+                        {!isMine && <div onClick={() => setReviewModal(selectedListing)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, marginTop: 8, cursor: "pointer" }}>Be the first to review →</div>}
+                      </div>
+                    ) : sellerReviews.map(r => (
+                      <div key={r.id} style={{ background: C.pill, borderRadius: 14, padding: "14px 16px", marginBottom: 10, border: `1px solid ${C.border}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={32} />
+                            <div>
+                              <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</div>
+                              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                            </div>
+                          </div>
+                          <StarRating rating={r.rating} size={13} />
+                        </div>
+                        {r.comment && <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{r.comment}</div>}
+                      </div>
+                    ))}
+                  </div>
+
                 </div>
               </div>
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "16px 20px 28px", background: C.card, borderTop: `1px solid ${C.border}`, display: "flex", gap: 12 }}>
-                {selectedListing.seller_id !== user?.id && <>
-                  <Btn style={{ flex: 1 }} onClick={() => startChat(selectedListing)}>💬 Message</Btn>
-                  <Btn style={{ flex: 1 }} onClick={() => setReviewModal(selectedListing)}>⭐ Rate</Btn>
-                </>}
-                <Btn primary style={{ flex: 1 }}>Buy Now</Btn>
+
+              {/* ── Sticky CTA bar ── */}
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 16px 28px", background: C.card, borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+                {isMine ? (
+                  <div style={{ flex: 1, textAlign: "center", color: C.muted, fontSize: 14, padding: "10px 0" }}>This is your listing</div>
+                ) : (
+                  <>
+                    <button onClick={() => setReviewModal(selectedListing)}
+                      style={{ width: 46, height: 46, borderRadius: 14, background: C.pill, border: `1px solid ${C.border}`, color: C.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⭐</button>
+                    <button onClick={() => startChat(selectedListing)}
+                      style={{ flex: 1, height: 46, borderRadius: 14, background: C.pill, border: `1px solid ${C.accent}44`, color: C.accent, fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      Message Seller
+                    </button>
+                    <button onClick={() => startChat(selectedListing)}
+                      style={{ flex: 1, height: 46, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      Buy Now
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -2424,4 +2564,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-              }
+      }
