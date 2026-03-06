@@ -445,6 +445,7 @@ export default function UniSwap() {
   const [sellCat, setSellCat]           = useState("Books");
   const [sellCond, setSellCond]         = useState("Good");
   const [sellDesc, setSellDesc]         = useState("");
+  const [sellQty, setSellQty]           = useState("1");
   const [sellPhotos, setSellPhotos]     = useState([]);
   const [sellPreviews, setSellPreviews] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -953,6 +954,7 @@ export default function UniSwap() {
       const insertPayload = {
         title: sellTitle.trim(),
         price: parseInt(sellPrice),
+        quantity: parseInt(sellQty) || 1,
         category: sellCat,
         condition: sellCond,
         description: sellDesc.trim(),
@@ -980,7 +982,7 @@ export default function UniSwap() {
       showToast("Listing posted! 🎉");
 
       // Clear form state
-      setSellTitle(""); setSellPrice(""); setSellDesc("");
+      setSellTitle(""); setSellPrice(""); setSellDesc(""); setSellQty("1");
       setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
 
       // Reset to "All" category so listing is always visible on home
@@ -1629,6 +1631,12 @@ export default function UniSwap() {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                       {dateStr}
                     </div>
+                    {(selectedListing.quantity > 1 || selectedListing.quantity != null) && (
+                      <div style={{ background: `${C.accent}15`, color: C.accent, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                        Qty: {selectedListing.quantity}
+                      </div>
+                    )}
                     {savedItems[selectedListing.id] && (
                       <div style={{ background: `${C.warm}18`, color: C.warm, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600 }}>Saved</div>
                     )}
@@ -1680,7 +1688,7 @@ export default function UniSwap() {
                     </div>
                     {reviewsLoading ? <Loader /> : sellerReviews.length === 0 ? (
                       <div style={{ background: C.pill, borderRadius: 14, padding: "20px", textAlign: "center" }}>
-                        <div style={{ fontSize: 28, marginBottom: 8 }}>⭐</div>
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="1" style={{ marginBottom: 8 }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                         <div style={{ color: C.muted, fontSize: 14 }}>No reviews yet for this seller</div>
                         {!isMine && <div onClick={() => setReviewModal(selectedListing)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, marginTop: 8, cursor: "pointer" }}>Be the first to review →</div>}
                       </div>
@@ -1709,19 +1717,10 @@ export default function UniSwap() {
                 {isMine ? (
                   <div style={{ flex: 1, textAlign: "center", color: C.muted, fontSize: 14, padding: "10px 0" }}>This is your listing</div>
                 ) : (
-                  <>
-                    <button onClick={() => setReviewModal(selectedListing)}
-                      style={{ width: 46, height: 46, borderRadius: 14, background: C.pill, border: `1px solid ${C.border}`, color: C.text, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⭐</button>
-                    <button onClick={() => startChat(selectedListing)}
-                      style={{ flex: 1, height: 46, borderRadius: 14, background: C.pill, border: `1px solid ${C.accent}44`, color: C.accent, fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                      Message Seller
-                    </button>
-                    <button onClick={() => startChat(selectedListing)}
-                      style={{ flex: 1, height: 46, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                      Buy Now
-                    </button>
-                  </>
+                  <button onClick={() => startChat(selectedListing)}
+                    style={{ flex: 1, height: 50, borderRadius: 16, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    Buy Now
+                  </button>
                 )}
               </div>
             </div>
@@ -1982,14 +1981,25 @@ export default function UniSwap() {
                 </div>
               )}
 
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Item Name</div>
+                <Input placeholder="e.g. Calculus Textbook" value={sellTitle} onChange={e => setSellTitle(e.target.value)} />
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-                <div>
-                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Item Name</div>
-                  <Input placeholder="e.g. Calculus Textbook" value={sellTitle} onChange={e => setSellTitle(e.target.value)} />
-                </div>
                 <div>
                   <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Price (₦)</div>
                   <Input type="number" placeholder="e.g. 4500" value={sellPrice} onChange={e => setSellPrice(e.target.value)} />
+                </div>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Quantity</div>
+                  <div style={{ display: "flex", alignItems: "center", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", height: 48 }}>
+                    <button onClick={() => setSellQty(q => String(Math.max(1, parseInt(q||1) - 1)))}
+                      style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 22, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>−</button>
+                    <div style={{ flex: 1, textAlign: "center", color: C.text, fontSize: 16, fontWeight: 700 }}>{sellQty || 1}</div>
+                    <button onClick={() => setSellQty(q => String(Math.min(99, parseInt(q||1) + 1)))}
+                      style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 22, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>+</button>
+                  </div>
                 </div>
               </div>
 
@@ -2564,4 +2574,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-      }
+                         }
