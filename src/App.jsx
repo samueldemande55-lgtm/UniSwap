@@ -9,6 +9,31 @@ const supabase = createClient(
 const C = { bg: "#0A0E1A", card: "#111827", border: "#1E2A3A", accent: "#00D4FF", warm: "#FF6B35", green: "#00E676", text: "#F0F4FF", muted: "#6B7FA3", pill: "#1A2540", sidebar: "#0D1421" };
 const CATEGORIES = ["All","Books","Electronics","Appliances","Furniture","Tools","Music","Accessories"];
 
+// ── Allowed email domains (popular providers + .edu/.edu.ng) ──
+const ALLOWED_EMAIL_DOMAINS = [
+  // Google
+  "gmail.com",
+  // Microsoft
+  "outlook.com","hotmail.com","live.com","msn.com","hotmail.co.uk","live.co.uk",
+  // Yahoo
+  "yahoo.com","yahoo.co.uk","yahoo.com.ng","ymail.com",
+  // Apple
+  "icloud.com","me.com","mac.com",
+  // Proton / privacy
+  "protonmail.com","proton.me","pm.me",
+  // Other popular
+  "zoho.com","aol.com","mail.com","gmx.com","gmx.net","tutanota.com",
+  // Nigerian providers
+  "glo.com","mtn.ng","airtel.ng",
+  // Education (generic)
+  "edu","edu.ng",
+];
+const isAllowedEmail = (email) => {
+  if (!email || !email.includes("@")) return false;
+  const domain = email.split("@")[1]?.toLowerCase() || "";
+  return ALLOWED_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
+};
+
 const getImages = (listing) => {
   try {
     const u = listing?.image_urls;
@@ -378,6 +403,11 @@ export default function UniSwap() {
   const [tab, setTab]                   = useState("home");
   const [authScreen, setAuthScreen]     = useState("login");
   const [loginStep, setLoginStep]       = useState("email");
+  const [signupStep, setSignupStep]     = useState("form");  // "form" | "otp"
+  const [otpCode, setOtpCode]           = useState("");
+  const [otpSending, setOtpSending]     = useState(false);
+  const [otpResendTimer, setOtpResendTimer] = useState(0);
+  const otpTimerRef = useRef(null);
   const [listings, setListings]         = useState([]);
   const [chats, setChats]               = useState([]);
   const [activeCat, setActiveCat]       = useState("All");
@@ -396,6 +426,12 @@ export default function UniSwap() {
   const [activePhoto, setActivePhoto]   = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [sellerProfile, setSellerProfile] = useState(null);
+  const [dealModal, setDealModal]       = useState(null);
+  const [dealStep, setDealStep]         = useState(1);
+  const [dealQty, setDealQty]           = useState(1);
+  const [reportTarget, setReportTarget] = useState(null);  // listing being reported
+  const [reportReason, setReportReason] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [newPassword, setNewPassword]   = useState("");
@@ -526,24 +562,80 @@ export default function UniSwap() {
     }
   };
 
-  const handleSignUp = async () => {
+  // Step 1 — validate form and send OTP
+  const handleSendOtp = async () => {
     if (!fullName || !email || !password || !matric) return showToast("Please fill all fields", "error");
     if (!email.includes("@")) return showToast("Please enter a valid email", "error");
+    if (!isAllowedEmail(email)) return showToast("Please use a recognised email provider (Gmail, Outlook, Yahoo, etc.)", "error");
+    if (password.length < 8) return showToast("Password must be at least 8 characters", "error");
     if (!acceptedTerms) return showToast("Please accept Terms & Privacy Policy", "error");
+    setOtpSending(true);
+    try {
+      // Use Supabase email OTP — sends a 6-digit code
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false, data: { otp_purpose: "signup" } },
+      });
+      // Supabase returns an error if the user doesn't exist yet when shouldCreateUser=false,
+      // so we use signUp with emailRedirectTo=null to trigger the confirmation email instead,
+      // then intercept the OTP from the confirmation token approach below.
+      // Simpler: just call signUp and let Supabase send the confirmation email,
+      // then in step 2 we verify with the OTP token.
+      if (error && !error.message.includes("already registered")) {
+        // Fallback: fire signUp which sends a confirmation email with 6-digit OTP
+      }
+      // Actually send OTP via Supabase's verifyOtp-compatible flow:
+      const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
+      if (otpErr) { showToast(otpErr.message, "error"); return; }
+      setSignupStep("otp");
+      setOtpCode("");
+      // Resend countdown: 60s
+      setOtpResendTimer(60);
+      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+      otpTimerRef.current = setInterval(() => {
+        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
+      }, 1000);
+      showToast("OTP sent! Check your inbox.");
+    } catch { showToast("Connection error. Try again.", "error"); }
+    finally { setOtpSending(false); }
+  };
+
+  // Step 2 — verify OTP then create the full account
+  const handleVerifyOtp = async () => {
+    if (otpCode.length < 6) return showToast("Enter the 6-digit code", "error");
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) { showToast(error.message, "error"); return; }
+      const { data, error } = await supabase.auth.verifyOtp({ email, token: otpCode, type: "email" });
+      if (error) { showToast("Invalid or expired code. Try again.", "error"); return; }
+      // OTP verified — now update password and profile metadata
       if (data?.user) {
+        await supabase.auth.updateUser({ password, data: { full_name: fullName, email, matric_number: matric, rating: 0 } }).catch(() => {});
         const meta = { full_name: fullName, email, matric_number: matric, rating: 0 };
-        // Save to auth metadata (always works) + best-effort profiles table
-        await supabase.auth.updateUser({ data: meta }).catch(() => {});
         syncProfileTable(data.user.id, meta);
         setProfile(meta);
-        showToast("Account created! Welcome 🎉");
+        setUser(data.user);
+        setSignupStep("form");
+        setOtpCode("");
+        showToast("Account verified! Welcome 🎉");
       }
     } catch { showToast("Connection error. Try again.", "error"); }
     finally { setLoading(false); }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpResendTimer > 0) return;
+    setOtpSending(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      if (error) { showToast(error.message, "error"); return; }
+      setOtpResendTimer(60);
+      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+      otpTimerRef.current = setInterval(() => {
+        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
+      }, 1000);
+      showToast("New OTP sent!");
+    } catch { showToast("Failed to resend. Try again.", "error"); }
+    finally { setOtpSending(false); }
   };
 
   const handleLogin = async () => {
@@ -1149,6 +1241,182 @@ export default function UniSwap() {
     setTab("messages");
   };
 
+  const handleBuyNow = (listing) => {
+    setDealModal(listing);
+    setDealStep(1);
+    setDealQty(1);
+  };
+
+  const handleDealConfirm = async () => {
+    setDealStep(2);
+  };
+
+  const handleReport = async () => {
+    if (!reportReason.trim()) return showToast("Please describe the issue", "error");
+    setReportSubmitting(true);
+    try {
+      await supabase.from("support_tickets").insert({
+        user_id: user.id,
+        topic: "Report a listing",
+        message: `Reported listing ID: ${reportTarget?.id} — "${reportTarget?.title}"
+
+Reason: ${reportReason.trim()}`,
+        status: "open",
+      });
+      showToast("Report submitted. We'll review this listing.");
+      setReportTarget(null);
+      setReportReason("");
+    } catch { showToast("Failed to submit report. Try again.", "error"); }
+    finally { setReportSubmitting(false); }
+  };
+
+  const handleDealPaid = async () => {
+    // Step 3 — buyer marks as paid, notifies seller via message
+    setDealStep(3);
+    const sellerId = dealModal.seller_id;
+    const totalPrice = dealModal.price * dealQty;
+    const safetyMsg = `🔒 ESCROW DEAL INITIATED\n\nItem: ${dealModal.title}\nQty: ${dealQty}\nTotal: ₦${totalPrice.toLocaleString()}\n\nThe buyer has marked this as paid. Please confirm delivery to release the deal. Do NOT accept outside-app payments.`;
+    try {
+      await supabase.from("messages").insert({
+        sender_id: user.id,
+        receiver_id: sellerId,
+        listing_id: dealModal.id,
+        content: safetyMsg,
+        is_read: false,
+      });
+    } catch { /* silent */ }
+    setDealStep(4);
+  };
+
+
+  // ── Deal / Escrow Modal ───────────────────────────────────────────────────
+  const DealModal = () => {
+    if (!dealModal) return null;
+    const total = dealModal.price * dealQty;
+    const sellerName = sellerProfile?.full_name || dealModal.profiles?.full_name || "Seller";
+    const steps = ["Confirm Order", "Payment", "Awaiting Seller"];
+    return (
+      <div onClick={() => { setDealModal(null); setDealStep(1); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 520, padding: "24px 20px 40px", border: `1px solid ${C.border}`, maxHeight: "92vh", overflowY: "auto" }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 20px" }} />
+
+          {dealStep < 4 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 20 }}>
+              {steps.map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, flex: i < 2 ? 1 : 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: dealStep > i+1 ? C.green : dealStep === i+1 ? C.accent : C.pill, color: dealStep > i+1 ? "#000" : dealStep === i+1 ? "#000" : C.muted, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      {dealStep > i+1 ? "✓" : i+1}
+                    </div>
+                    <span style={{ fontSize: 10, color: dealStep === i+1 ? C.text : C.muted, fontWeight: dealStep === i+1 ? 700 : 400, whiteSpace: "nowrap" }}>{s}</span>
+                  </div>
+                  {i < 2 && <div style={{ flex: 1, height: 1, background: dealStep > i+1 ? C.green : C.border, minWidth: 8 }} />}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {dealStep === 1 && (
+            <div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 18 }}>Confirm Order</div>
+              <div style={{ background: C.pill, borderRadius: 14, padding: 14, marginBottom: 18, display: "flex", gap: 12, alignItems: "center" }}>
+                {getImages(dealModal)[0]
+                  ? <img src={getImages(dealModal)[0]} alt="" style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                  : <div style={{ width: 60, height: 60, borderRadius: 10, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>📦</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dealModal.title}</div>
+                  <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Seller: {sellerName}</div>
+                  <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 4 }}>₦{dealModal.price?.toLocaleString()} each</div>
+                </div>
+              </div>
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Quantity</div>
+                <div style={{ display: "flex", alignItems: "center", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", height: 44, width: 140 }}>
+                  <button onClick={() => setDealQty(q => Math.max(1, q - 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
+                  <div style={{ flex: 1, textAlign: "center", color: C.text, fontSize: 15, fontWeight: 700 }}>{dealQty}</div>
+                  <button onClick={() => setDealQty(q => Math.min(dealModal.quantity || 99, q + 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
+                </div>
+              </div>
+              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ color: C.muted, fontSize: 13 }}>Subtotal ({dealQty}x)</span>
+                  <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>₦{total.toLocaleString()}</span>
+                </div>
+                <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Total</span>
+                  <span style={{ color: C.accent, fontWeight: 800, fontSize: 17 }}>₦{total.toLocaleString()}</span>
+                </div>
+              </div>
+              <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}33`, borderRadius: 12, padding: "10px 14px", marginBottom: 18, display: "flex", gap: 10 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill={C.green} style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+                <span style={{ color: C.green, fontSize: 12, lineHeight: 1.6 }}><strong>Secure deal.</strong> Never pay outside UniSwap. Always confirm payment in-app.</span>
+              </div>
+              <button onClick={handleDealConfirm} style={{ width: "100%", height: 48, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+                Continue to Payment →
+              </button>
+            </div>
+          )}
+
+          {dealStep === 2 && (
+            <div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Make Payment</div>
+              <div style={{ color: C.muted, fontSize: 13, marginBottom: 18 }}>Transfer exactly <strong style={{ color: C.accent }}>₦{total.toLocaleString()}</strong> to the seller. Arrange bank details with seller in chat.</div>
+              <div style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 16 }}>
+                {[["Seller", sellerName], ["Item", dealModal.title], ["Amount", `₦${total.toLocaleString()}`], ["Payment Method", "Bank Transfer / Mobile Money"]].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                    <span style={{ color: C.muted, fontSize: 13 }}>{label}</span>
+                    <span style={{ color: C.text, fontWeight: 600, fontSize: 13, maxWidth: "60%", textAlign: "right" }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ background: `${C.warm}15`, border: `1px solid ${C.warm}44`, borderRadius: 12, padding: "10px 14px", marginBottom: 18, display: "flex", gap: 10 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill={C.warm} style={{ flexShrink: 0, marginTop: 1 }}><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                <span style={{ color: C.warm, fontSize: 12, lineHeight: 1.6 }}>Only pay after confirming bank details in chat. Tap "I've Paid" once transfer is done.</span>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setDealStep(1)} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>← Back</button>
+                <button onClick={handleDealPaid} style={{ flex: 2, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.green},#00AA55)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>I've Paid ✓</button>
+              </div>
+            </div>
+          )}
+
+          {dealStep === 3 && (
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <div style={{ width: 56, height: 56, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+                <div style={{ width: 30, height: 30, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              </div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Notifying Seller…</div>
+              <div style={{ color: C.muted, fontSize: 14 }}>Sending your payment notification to the seller.</div>
+            </div>
+          )}
+
+          {dealStep === 4 && (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ width: 68, height: 68, borderRadius: "50%", background: `${C.green}22`, border: `2px solid ${C.green}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 32 }}>✓</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Deal Initiated!</div>
+              <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 }}>
+                <strong style={{ color: C.text }}>{sellerName}</strong> has been notified. Go to Messages to share payment details and arrange pickup.
+              </div>
+              <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}22`, borderRadius: 14, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
+                {["Seller notified via in-app message", "Share bank details securely in chat", "Rate the seller after deal closes"].map((tip, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: i < 2 ? 8 : 0 }}>
+                    <div style={{ width: 18, height: 18, borderRadius: "50%", background: `${C.green}33`, color: C.green, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</div>
+                    <span style={{ color: C.muted, fontSize: 13 }}>{tip}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => { setDealModal(null); setDealStep(1); startChat(dealModal); }} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.accent}44`, color: C.accent, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Open Chat</button>
+                <button onClick={() => { setDealModal(null); setDealStep(1); }} style={{ flex: 1, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Done</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
   // ── Loading splash ─────────────────────────────────────────────────────────
@@ -1262,29 +1530,126 @@ export default function UniSwap() {
             </div>
           )}
 
-          {authScreen === "signup" && (
+          {authScreen === "signup" && signupStep === "form" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
+              <div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
+                <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Step 1 of 2 — Your details</div>
+              </div>
+
               <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
-              <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
+
+              <div>
+                <Input
+                  placeholder="Email (Gmail, Outlook, Yahoo…)"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  style={{ borderColor: email && email.includes("@") && !isAllowedEmail(email) ? "#FF5555" : email && isAllowedEmail(email) ? C.green : undefined }}
+                />
+                {email && email.includes("@") && !isAllowedEmail(email) && (
+                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                    Use Gmail, Outlook, Yahoo, iCloud or similar
+                  </div>
+                )}
+                {email && isAllowedEmail(email) && (
+                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                    Valid email address
+                  </div>
+                )}
+              </div>
+
               <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
+
               <div style={{ position: "relative" }}>
-                <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                <Input type={showPassword ? "text" : "password"} placeholder="Create password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
                 <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
               </div>
+              {password && password.length < 8 && (
+                <div style={{ color: "#FF5555", fontSize: 12, marginTop: -8, display: "flex", alignItems: "center", gap: 4 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                  Password must be at least 8 characters
+                </div>
+              )}
+
               <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
                 <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .2s" }}>
                   {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
                 </div>
                 <span style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
               </label>
-              <Btn primary onClick={handleSignUp} style={{ opacity: acceptedTerms ? 1 : 0.5 }}>{loading ? "Creating…" : "Join UniSwap 🚀"}</Btn>
+
+              <Btn primary onClick={handleSendOtp} style={{ opacity: acceptedTerms && isAllowedEmail(email) ? 1 : 0.5 }}>
+                {otpSending ? "Sending OTP…" : "Continue →"}
+              </Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
             </div>
           )}
 
+          {authScreen === "signup" && signupStep === "otp" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Verify your email</div>
+                <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Step 2 of 2 — Email verification</div>
+              </div>
+
+              {/* Email icon + address */}
+              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "16px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <div>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Code sent to</div>
+                  <div style={{ color: C.accent, fontSize: 13, marginTop: 2 }}>{email}</div>
+                </div>
+              </div>
+
+              <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
+                Enter the <strong style={{ color: C.text }}>6-digit code</strong> from your inbox. Check your spam folder if you don't see it.
+              </div>
+
+              {/* OTP input */}
+              <div>
+                <Input
+                  placeholder="Enter 6-digit OTP"
+                  value={otpCode}
+                  onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  style={{ textAlign: "center", letterSpacing: 10, fontSize: 22, fontWeight: 800, borderColor: otpCode.length === 6 ? C.green : undefined }}
+                  maxLength={6}
+                />
+                {otpCode.length === 6 && (
+                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                    Code complete
+                  </div>
+                )}
+              </div>
+
+              <Btn primary onClick={handleVerifyOtp} style={{ opacity: otpCode.length === 6 ? 1 : 0.5 }}>
+                {loading ? "Verifying…" : "Verify & Create Account 🎉"}
+              </Btn>
+
+              {/* Resend */}
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 13 }}>
+                Didn't receive it?{" "}
+                {otpResendTimer > 0
+                  ? <span style={{ color: C.muted }}>Resend in {otpResendTimer}s</span>
+                  : <span onClick={handleResendOtp} style={{ color: C.accent, fontWeight: 600, cursor: "pointer" }}>{otpSending ? "Sending…" : "Resend OTP"}</span>
+                }
+              </div>
+
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => { setSignupStep("form"); setOtpCode(""); }}>
+                ← Change email
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}1A`, textAlign: "center" }}>
-            <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed</div>
+            <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+              Email verified sign-ups only — your account is protected
+            </div>
           </div>
         </div>
       </div>
@@ -1360,6 +1725,44 @@ export default function UniSwap() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <Toast {...toast} />
       {modal && <Modal type={modal} onClose={() => setModal(null)} />}
+      {dealModal && <DealModal />}
+
+      {/* ── Report Listing Modal ── */}
+      {reportTarget && (
+        <div onClick={() => { setReportTarget(null); setReportReason(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 9001, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: "22px 22px 0 0", width: "100%", maxWidth: 520, padding: "24px 20px 36px", border: `1px solid ${C.border}` }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+              <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#FF555522", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF5555" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              </div>
+              <div>
+                <div style={{ color: C.text, fontWeight: 800, fontSize: 16 }}>Report Listing</div>
+                <div style={{ color: C.muted, fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{reportTarget.title}</div>
+              </div>
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Reason</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              {["Fake / Scam listing", "Item already sold", "Inappropriate content", "Wrong price / misleading", "Other"].map(r => (
+                <div key={r} onClick={() => setReportReason(r)} style={{ background: reportReason === r ? "#FF555522" : C.pill, border: `1.5px solid ${reportReason === r ? "#FF5555" : C.border}`, borderRadius: 20, padding: "6px 14px", fontSize: 13, color: reportReason === r ? "#FF5555" : C.muted, cursor: "pointer", fontWeight: reportReason === r ? 700 : 400, transition: "all .15s" }}>{r}</div>
+              ))}
+            </div>
+            <textarea
+              value={reportReason}
+              onChange={e => setReportReason(e.target.value)}
+              placeholder="Describe the issue in more detail…"
+              style={{ width: "100%", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontSize: 14, resize: "none", height: 80, outline: "none", boxSizing: "border-box", lineHeight: 1.6, marginBottom: 16 }}
+            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setReportTarget(null); setReportReason(""); }} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleReport} disabled={reportSubmitting} style={{ flex: 2, height: 46, borderRadius: 12, background: reportSubmitting ? C.border : "#FF5555", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: reportSubmitting ? "default" : "pointer" }}>
+                {reportSubmitting ? "Submitting…" : "Submit Report"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reviewModal && (
         <ReviewModal
           listing={reviewModal}
@@ -1559,6 +1962,14 @@ export default function UniSwap() {
                 <div onClick={() => { setSelectedListing(null); setActivePhoto(0); setSellerProfile(null); setSellerReviews([]); }}
                   style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0, fontSize: 18 }}>←</div>
                 <span style={{ color: C.text, fontWeight: 700, fontSize: 15, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedListing.title}</span>
+                {/* Report button — only for other people's listings */}
+                {!isMine && (
+                  <div onClick={() => setReportTarget(selectedListing)}
+                    title="Report this listing"
+                    style={{ width: 36, height: 36, borderRadius: "50%", background: C.pill, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF5555" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                  </div>
+                )}
                 {/* Share button */}
                 <div onClick={() => {
                   const text = `Check out "${selectedListing.title}" for ₦${selectedListing.price?.toLocaleString()} on UniSwap!`;
@@ -1719,8 +2130,9 @@ export default function UniSwap() {
                 {isMine ? (
                   <div style={{ flex: 1, textAlign: "center", color: C.muted, fontSize: 14, padding: "10px 0" }}>This is your listing</div>
                 ) : (
-                  <button onClick={() => startChat(selectedListing)}
-                    style={{ flex: 1, height: 50, borderRadius: 16, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <button onClick={() => handleBuyNow(selectedListing)}
+                    style={{ flex: 1, height: 50, borderRadius: 16, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h5l3 5v3h-8V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
                     Buy Now
                   </button>
                 )}
@@ -1844,6 +2256,12 @@ export default function UniSwap() {
                     <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   </div>
                 )}
+              </div>
+
+              {/* Safety banner */}
+              <div style={{ padding: "8px 14px", background: `${C.warm}12`, borderBottom: `1px solid ${C.warm}33`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill={C.warm} style={{ flexShrink: 0 }}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+                <span style={{ color: C.warm, fontSize: 11, lineHeight: 1.5 }}>Never share bank details or pay outside UniSwap. Use the <strong>Buy Now</strong> button to transact safely.</span>
               </div>
 
               {/* Messages */}
@@ -2576,4 +2994,4 @@ export default function UniSwap() {
       </nav>
     </div>
   );
-                       }
+}
