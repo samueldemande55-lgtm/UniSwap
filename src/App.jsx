@@ -9,31 +9,6 @@ const supabase = createClient(
 const C = { bg: "#0A0E1A", card: "#111827", border: "#1E2A3A", accent: "#00D4FF", warm: "#FF6B35", green: "#00E676", text: "#F0F4FF", muted: "#6B7FA3", pill: "#1A2540", sidebar: "#0D1421" };
 const CATEGORIES = ["All","Books","Electronics","Appliances","Furniture","Tools","Music","Accessories"];
 
-// ── Allowed email domains (popular providers + .edu/.edu.ng) ──
-const ALLOWED_EMAIL_DOMAINS = [
-  // Google
-  "gmail.com",
-  // Microsoft
-  "outlook.com","hotmail.com","live.com","msn.com","hotmail.co.uk","live.co.uk",
-  // Yahoo
-  "yahoo.com","yahoo.co.uk","yahoo.com.ng","ymail.com",
-  // Apple
-  "icloud.com","me.com","mac.com",
-  // Proton / privacy
-  "protonmail.com","proton.me","pm.me",
-  // Other popular
-  "zoho.com","aol.com","mail.com","gmx.com","gmx.net","tutanota.com",
-  // Nigerian providers
-  "glo.com","mtn.ng","airtel.ng",
-  // Education (generic)
-  "edu","edu.ng",
-];
-const isAllowedEmail = (email) => {
-  if (!email || !email.includes("@")) return false;
-  const domain = email.split("@")[1]?.toLowerCase() || "";
-  return ALLOWED_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
-};
-
 const getImages = (listing) => {
   try {
     const u = listing?.image_urls;
@@ -54,8 +29,8 @@ const Input = ({ style, ...props }) => (
 const Btn = ({ primary, danger, style, children, ...props }) => (
   <button style={{ background: primary ? `linear-gradient(135deg,${C.accent},#0099CC)` : danger ? "#FF555522" : C.pill, color: primary ? "#000" : danger ? "#FF5555" : C.text, border: danger ? "1px solid #FF555544" : "none", borderRadius: 14, padding: "14px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", width: "100%", transition: "all .2s", ...style }} {...props}>{children}</button>
 );
-const Avatar = ({ initials, size = 36, src }) => (
-  <div style={{ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent}33,${C.warm}33)`, border: `1.5px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 700, color: C.accent, flexShrink: 0, overflow: "hidden" }}>
+const Avatar = ({ initials, size = 36, src, onClick, style }) => (
+  <div onClick={onClick} style={{ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg,${C.accent}33,${C.warm}33)`, border: `1.5px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 700, color: C.accent, flexShrink: 0, overflow: "hidden", cursor: onClick ? "pointer" : "default", ...style }}>
     {src ? <img src={src} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : initials}
   </div>
 );
@@ -179,6 +154,7 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     if (!canSend) return;
     const mailto = buildMailto();
 
+    // Strategy 1: invisible anchor click — most reliable across browsers & mobile
     const a = document.createElement("a");
     a.href = mailto;
     a.style.display = "none";
@@ -186,6 +162,7 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     a.click();
     document.body.removeChild(a);
 
+    // Strategy 2: window.open fallback after small delay (catches cases where anchor silently fails)
     setTimeout(() => {
       try { window.open(mailto, "_self"); } catch {}
     }, 300);
@@ -222,9 +199,9 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", justifyContent: "center", alignItems: "center", padding: 20 }}>
       <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 480, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
 
-        {/* Header — emoji removed */}
+        {/* Header */}
         <div style={{ padding: "20px 24px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>Email Support</div>
+          <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>📧 Email Support</div>
           <div onClick={onClose} style={{ background: C.pill, borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.muted, fontSize: 16 }}>✕</div>
         </div>
 
@@ -267,7 +244,7 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
             <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{body.length} characters</div>
           </div>
 
-          {/* Post-open state — emojis removed from buttons */}
+          {/* Post-open state */}
           {mailOpened && (
             <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}33`, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ color: C.green, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>✓ Mail app launched!</div>
@@ -276,17 +253,17 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={handleCopyMessage} style={{ flex: 1, background: copied ? `${C.green}22` : C.pill, color: copied ? C.green : C.text, border: `1px solid ${copied ? C.green + "44" : C.border}`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
-                  {copied ? "✓ Copied!" : "Copy Message"}
+                  {copied ? "✓ Copied!" : "📋 Copy Message"}
                 </button>
                 <button onClick={handleOpenMail} style={{ flex: 1, background: C.pill, color: C.accent, border: `1px solid ${C.accent}33`, borderRadius: 10, padding: "9px 0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                  Try Again
+                  🔄 Try Again
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer — emoji removed from send button */}
+        {/* Footer */}
         <div style={{ padding: "12px 24px 24px", display: "flex", gap: 10, flexShrink: 0, borderTop: `1px solid ${C.border}` }}>
           <button onClick={onClose} style={{ flex: 1, background: C.pill, color: C.text, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
             Cancel
@@ -295,6 +272,7 @@ const ContactEmailModal = ({ userEmail, onClose }) => {
             onClick={handleOpenMail}
             disabled={!canSend}
             style={{ flex: 2, background: canSend ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, color: canSend ? "#000" : C.muted, border: "none", borderRadius: 14, padding: "13px", fontSize: 14, fontWeight: 700, cursor: canSend ? "pointer" : "not-allowed", transition: "all .2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span>📬</span>
             <span>{mailOpened ? "Open Mail Again" : "Open Mail App"}</span>
           </button>
         </div>
@@ -328,11 +306,6 @@ const GLOBAL_CSS = `
 
   /* ── Main content area ── */
   .main-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-width: 0; }
-
-  /* ── Mobile logo bar (hidden on desktop where sidebar shows) ── */
-  .mobile-logo-bar { display: none; align-items: center; gap: 8px; padding: 16px 20px 0; cursor: pointer; user-select: none; }
-  .mobile-logo-bar-text { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; background: linear-gradient(135deg,${C.accent},${C.warm}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  @media (max-width: 1023px) { .mobile-logo-bar { display: flex; } }
   .page-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .page-title { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; color: ${C.text}; }
 
@@ -403,11 +376,6 @@ export default function UniSwap() {
   const [tab, setTab]                   = useState("home");
   const [authScreen, setAuthScreen]     = useState("login");
   const [loginStep, setLoginStep]       = useState("email");
-  const [signupStep, setSignupStep]     = useState("form");  // "form" | "otp"
-  const [otpCode, setOtpCode]           = useState("");
-  const [otpSending, setOtpSending]     = useState(false);
-  const [otpResendTimer, setOtpResendTimer] = useState(0);
-  const otpTimerRef = useRef(null);
   const [listings, setListings]         = useState([]);
   const [chats, setChats]               = useState([]);
   const [activeCat, setActiveCat]       = useState("All");
@@ -424,14 +392,6 @@ export default function UniSwap() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [activePhoto, setActivePhoto]   = useState(0);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [sellerProfile, setSellerProfile] = useState(null);
-  const [dealModal, setDealModal]       = useState(null);
-  const [dealStep, setDealStep]         = useState(1);
-  const [dealQty, setDealQty]           = useState(1);
-  const [reportTarget, setReportTarget] = useState(null);  // listing being reported
-  const [reportReason, setReportReason] = useState("");
-  const [reportSubmitting, setReportSubmitting] = useState(false);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [newPassword, setNewPassword]   = useState("");
@@ -439,9 +399,9 @@ export default function UniSwap() {
   const [resetSent, setResetSent]       = useState(false);
   const [myListings, setMyListings]     = useState([]);
   const [myListingsLoading, setMyListingsLoading] = useState(false);
-  const [myListingsTab, setMyListingsTab] = useState("active");
-  const [profileTab, setProfileTab]     = useState("menu");
-  const [reviewModal, setReviewModal]   = useState(null);
+  const [myListingsTab, setMyListingsTab] = useState("active"); // active | sold
+  const [profileTab, setProfileTab]     = useState("menu"); // menu | listings
+  const [reviewModal, setReviewModal]   = useState(null); // listing to review
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover]   = useState(0);
   const [reviewText, setReviewText]     = useState("");
@@ -460,16 +420,12 @@ export default function UniSwap() {
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifPermission, setNotifPermission] = useState("default");
   const [msgAlertsEnabled, setMsgAlertsEnabled] = useState(false);
-  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0);
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(0); // 0=hidden, 1=confirm, 2=type-confirm
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [supportTopic, setSupportTopic] = useState(null);
+  const [supportTopic, setSupportTopic] = useState(null); // active support sub-page
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
   const [contactModal, setContactModal] = useState(false);
-  const [unreadCount, setUnreadCount]   = useState(0);
-  const [chatProfiles, setChatProfiles] = useState({}); // uid -> { full_name, avatar_url }
-  const [otherIsTyping, setOtherIsTyping] = useState(false);
-  const realtimeRef = useRef(null);
 
   // Form state
   const [email, setEmail]               = useState("");
@@ -481,10 +437,17 @@ export default function UniSwap() {
   const [sellCat, setSellCat]           = useState("Books");
   const [sellCond, setSellCond]         = useState("Good");
   const [sellDesc, setSellDesc]         = useState("");
-  const [sellQty, setSellQty]           = useState("1");
   const [sellPhotos, setSellPhotos]     = useState([]);
   const [sellPreviews, setSellPreviews] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // ── Deal / Escrow state ──
+  const [dealModal, setDealModal]               = useState(null);   // listing being purchased
+  const [dealStep, setDealStep]                 = useState(1);      // 1=confirm 2=pay 3=awaiting 4=done
+  const [dealQty, setDealQty]                   = useState(1);
+  const [dealLoading, setDealLoading]           = useState(false);
+  const [sellerConfirmModal, setSellerConfirmModal] = useState(null); // { deal, listing }
+  const realtimeRef = useRef(null);
 
   const msgEndRef   = useRef(null);
   const photoInputRef = useRef(null);
@@ -510,132 +473,29 @@ export default function UniSwap() {
     return () => subscription.unsubscribe();
   }, []);
 
-
-
-  // ── Profile helpers ──────────────────────────────────────────────────────────
-  // Primary store: Supabase Auth user_metadata (always available, no table needed)
-  // Secondary store: profiles table (best-effort, used when it exists)
-
-  const isTableError = (msg = "") =>
-    msg.includes("schema cache") ||
-    msg.includes("does not exist") ||
-    msg.includes("relation") ||
-    msg.includes("PGRST");
-
-  const syncProfileTable = async (uid, data) => {
-    // Fire-and-forget — never blocks the UI save
-    try {
-      await supabase.from("profiles").upsert(
-        { id: uid, ...data },
-        { onConflict: "id" }
-      );
-    } catch (_) { /* table may not exist yet — that's OK */ }
-  };
-
   const fetchProfile = async (uid) => {
     try {
-      // 1️⃣ Try the profiles table first
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
-      if (!error && data) {
-        setProfile(data);
-        if (data.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
-        return;
-      }
-      // 2️⃣ Fall back to auth user_metadata
-      const { data: authData } = await supabase.auth.getUser();
-      const meta = authData?.user?.user_metadata || {};
-      const fallback = {
-        id: uid,
-        full_name: meta.full_name || authData?.user?.email?.split("@")[0] || "User",
-        email: authData?.user?.email || "",
-        matric_number: meta.matric_number || "",
-        bio: meta.bio || "",
-        rating: meta.rating || 0,
-        avatar_url: meta.avatar_url || "",
-      };
-      setProfile(fallback);
-      if (fallback.avatar_url) setAvatarUrl(fallback.avatar_url + `?t=${Date.now()}`);
-      // 3️⃣ Best-effort: seed the profiles table if it exists
-      syncProfileTable(uid, fallback);
-    } catch {
-      setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 });
-    }
+      const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
+      setProfile(data || { full_name: "User", email: "", matric_number: "", rating: 0 });
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url + `?t=${Date.now()}`);
+    } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
   };
 
-  // Step 1 — validate form and send OTP
-  const handleSendOtp = async () => {
+  const handleSignUp = async () => {
     if (!fullName || !email || !password || !matric) return showToast("Please fill all fields", "error");
     if (!email.includes("@")) return showToast("Please enter a valid email", "error");
-    if (!isAllowedEmail(email)) return showToast("Please use a recognised email provider (Gmail, Outlook, Yahoo, etc.)", "error");
-    if (password.length < 8) return showToast("Password must be at least 8 characters", "error");
     if (!acceptedTerms) return showToast("Please accept Terms & Privacy Policy", "error");
-    setOtpSending(true);
-    try {
-      // Use Supabase email OTP — sends a 6-digit code
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false, data: { otp_purpose: "signup" } },
-      });
-      // Supabase returns an error if the user doesn't exist yet when shouldCreateUser=false,
-      // so we use signUp with emailRedirectTo=null to trigger the confirmation email instead,
-      // then intercept the OTP from the confirmation token approach below.
-      // Simpler: just call signUp and let Supabase send the confirmation email,
-      // then in step 2 we verify with the OTP token.
-      if (error && !error.message.includes("already registered")) {
-        // Fallback: fire signUp which sends a confirmation email with 6-digit OTP
-      }
-      // Actually send OTP via Supabase's verifyOtp-compatible flow:
-      const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
-      if (otpErr) { showToast(otpErr.message, "error"); return; }
-      setSignupStep("otp");
-      setOtpCode("");
-      // Resend countdown: 60s
-      setOtpResendTimer(60);
-      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
-      otpTimerRef.current = setInterval(() => {
-        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
-      }, 1000);
-      showToast("OTP sent! Check your inbox.");
-    } catch { showToast("Connection error. Try again.", "error"); }
-    finally { setOtpSending(false); }
-  };
-
-  // Step 2 — verify OTP then create the full account
-  const handleVerifyOtp = async () => {
-    if (otpCode.length < 6) return showToast("Enter the 6-digit code", "error");
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({ email, token: otpCode, type: "email" });
-      if (error) { showToast("Invalid or expired code. Try again.", "error"); return; }
-      // OTP verified — now update password and profile metadata
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) { showToast(error.message, "error"); return; }
       if (data?.user) {
-        await supabase.auth.updateUser({ password, data: { full_name: fullName, email, matric_number: matric, rating: 0 } }).catch(() => {});
-        const meta = { full_name: fullName, email, matric_number: matric, rating: 0 };
-        syncProfileTable(data.user.id, meta);
-        setProfile(meta);
-        setUser(data.user);
-        setSignupStep("form");
-        setOtpCode("");
-        showToast("Account verified! Welcome 🎉");
+        await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
+        setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
+        showToast("Account created! Welcome 🎉");
       }
     } catch { showToast("Connection error. Try again.", "error"); }
     finally { setLoading(false); }
-  };
-
-  const handleResendOtp = async () => {
-    if (otpResendTimer > 0) return;
-    setOtpSending(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      if (error) { showToast(error.message, "error"); return; }
-      setOtpResendTimer(60);
-      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
-      otpTimerRef.current = setInterval(() => {
-        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
-      }, 1000);
-      showToast("New OTP sent!");
-    } catch { showToast("Failed to resend. Try again.", "error"); }
-    finally { setOtpSending(false); }
   };
 
   const handleLogin = async () => {
@@ -690,8 +550,7 @@ export default function UniSwap() {
     setMyListingsLoading(true);
     try {
       const { data } = await supabase.from("listings").select("*").eq("seller_id", user.id).order("created_at", { ascending: false });
-      // Normalise is_sold null → false so new listings don't show as sold
-      setMyListings((data || []).map(l => ({ ...l, is_sold: l.is_sold === true })));
+      setMyListings(data || []);
     } catch { setMyListings([]); }
     finally { setMyListingsLoading(false); }
   };
@@ -702,7 +561,6 @@ export default function UniSwap() {
     const { error } = await supabase.from("listings").update({ is_sold: true }).eq("id", id);
     if (!error) {
       setMyListings(p => p.map(l => l.id === id ? { ...l, is_sold: true } : l));
-      setListings(p => p.filter(l => l.id !== id)); // remove from home feed immediately
       fetchListings();
       showToast("Marked as sold! 🎉");
     } else { showToast("Failed to update. Try again.", "error"); }
@@ -727,26 +585,12 @@ export default function UniSwap() {
     }
     setLoading(true);
     try {
-      const meta = {
-        full_name: editName.trim(),
-        matric_number: editMatric.trim(),
-        bio: editBio.trim(),
-        email: profile?.email || user?.email || "",
-        rating: profile?.rating || 0,
-        avatar_url: profile?.avatar_url || "",
-      };
-
-      // ✅ PRIMARY: Save to Supabase Auth user_metadata — always works, no table needed
-      const { error: metaErr } = await supabase.auth.updateUser({ data: meta });
-      if (metaErr) { showToast(metaErr.message || "Failed to save. Try again.", "error"); return; }
-
-      // ✅ Update local state immediately
-      setProfile(p => ({ ...p, ...meta }));
-
-      // 🔄 SECONDARY: Sync to profiles table best-effort (silent if table missing)
-      syncProfileTable(user.id, meta);
-
-      // 🔐 Handle password change if requested
+      // Update bio data
+      const updates = { full_name: editName.trim(), matric_number: editMatric.trim(), bio: editBio.trim() };
+      const { error } = await supabase.from("profiles").update(updates).eq("id", user.id);
+      if (error) { showToast(error.message, "error"); return; }
+      setProfile(p => ({ ...p, ...updates }));
+      // Update password — re-auth first with current password
       if (newPassword) {
         const userEmail = profile?.email || user?.email;
         const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email: userEmail, password: currentPassword });
@@ -755,12 +599,9 @@ export default function UniSwap() {
         if (pwErr) { showToast(pwErr.message, "error"); return; }
         setCurrentPassword(""); setNewPassword(""); setNewPasswordConfirm("");
       }
-
       showToast(newPassword ? "Profile & password updated! ✅" : "Profile updated! ✅");
       setProfileTab("menu");
-    } catch (e) {
-      showToast("Failed to update. Try again.", "error");
-    }
+    } catch { showToast("Failed to update. Try again.", "error"); }
     finally { setLoading(false); }
   };
 
@@ -778,10 +619,7 @@ export default function UniSwap() {
       if (uploadErr) { showToast("Upload failed: " + uploadErr.message, "error"); return; }
       const { data: { publicUrl } } = supabase.storage.from("listings").getPublicUrl(path);
       const url = `${publicUrl}?t=${Date.now()}`;
-      // Save avatar to auth metadata (primary) + profiles table (secondary)
-      const avatarMeta = { ...( profile || {}), avatar_url: publicUrl, id: user.id };
-      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } }).catch(() => {});
-      syncProfileTable(user.id, avatarMeta);
+      await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
       setAvatarUrl(url);
       setProfile(p => ({ ...p, avatar_url: publicUrl }));
       showToast("Profile picture updated! ✅");
@@ -792,11 +630,13 @@ export default function UniSwap() {
   const fetchPurchases = async () => {
     setPurchasesLoading(true);
     try {
+      // Purchases = listings the user has messaged about (as buyer)
       const { data: msgs } = await supabase
         .from("messages")
-        .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold)")
+        .select("listing_id, listings(id, title, price, category, condition, image_urls, is_sold, profiles(full_name))")
         .eq("sender_id", user.id)
         .order("created_at", { ascending: false });
+      // Deduplicate by listing_id
       const seen = {};
       const unique = (msgs || []).filter(m => {
         if (!m.listings || seen[m.listing_id]) return false;
@@ -807,6 +647,7 @@ export default function UniSwap() {
     finally { setPurchasesLoading(false); }
   };
 
+  // Saved items — persisted in localStorage for instant access
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("uniswap_saved") || "{}");
@@ -824,6 +665,7 @@ export default function UniSwap() {
     });
   };
 
+  // Notification permission
   useEffect(() => {
     if ("Notification" in window) {
       setNotifPermission(Notification.permission);
@@ -863,11 +705,14 @@ export default function UniSwap() {
   const handleDeleteAccount = async () => {
     setLoading(true);
     try {
+      // Delete all user data in order
       await supabase.from("messages").delete().or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
       await supabase.from("reviews").delete().or(`seller_id.eq.${user.id},reviewer_id.eq.${user.id}`);
       await supabase.from("listings").delete().eq("seller_id", user.id);
       await supabase.from("profiles").delete().eq("id", user.id);
+      // Clear local storage
       try { localStorage.removeItem("uniswap_saved"); } catch {}
+      // Sign out — auth account deletion requires admin key so we sign out instead
       await supabase.auth.signOut();
       showToast("Account deleted. Goodbye 👋");
     } catch { showToast("Failed to delete. Contact support.", "error"); }
@@ -892,45 +737,15 @@ export default function UniSwap() {
     finally { setLoading(false); }
   };
 
-  const fetchSellerProfile = async (sellerId) => {
-    if (!sellerId) return;
-    try {
-      const { data } = await supabase.from("profiles").select("*").eq("id", sellerId).single();
-      if (data) setSellerProfile(data);
-      else {
-        // fallback: get from auth metadata if same user
-        const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user?.id === sellerId) {
-          const meta = authData.user.user_metadata || {};
-          setSellerProfile({ id: sellerId, full_name: meta.full_name || "User", avatar_url: meta.avatar_url || "", rating: meta.rating || 0, bio: meta.bio || "" });
-        }
-      }
-    } catch { setSellerProfile(null); }
-  };
-
   const fetchSellerReviews = async (sellerId) => {
     setReviewsLoading(true);
     try {
-      const { data: reviewData } = await supabase
+      const { data } = await supabase
         .from("reviews")
-        .select("*")
+        .select("*, profiles!reviewer_id(full_name)")
         .eq("seller_id", sellerId)
         .order("created_at", { ascending: false });
-      const reviews = reviewData || [];
-      // Enrich with reviewer names separately
-      const reviewerIds = [...new Set(reviews.map(r => r.reviewer_id).filter(Boolean))];
-      let reviewerMap = {};
-      if (reviewerIds.length > 0) {
-        try {
-          const { data: rProfiles } = await supabase
-            .from("profiles").select("id, full_name").in("id", reviewerIds);
-          (rProfiles || []).forEach(p => { reviewerMap[p.id] = p; });
-        } catch {}
-      }
-      setSellerReviews(reviews.map(r => ({
-        ...r,
-        profiles: reviewerMap[r.reviewer_id] || null,
-      })));
+      setSellerReviews(data || []);
     } catch { setSellerReviews([]); }
     finally { setReviewsLoading(false); }
   };
@@ -948,6 +763,7 @@ export default function UniSwap() {
         comment: reviewText.trim(),
       });
       if (error) { showToast(error.message, "error"); return; }
+      // Recalculate seller average rating
       const { data: allReviews } = await supabase
         .from("reviews").select("rating").eq("seller_id", reviewModal.seller_id);
       if (allReviews?.length) {
@@ -967,46 +783,10 @@ export default function UniSwap() {
   const fetchListings = async () => {
     setListingsLoading(true);
     try {
-      // Use .or() to catch is_sold=false AND is_sold=null (null happens when
-      // the column default wasn't set — both mean "not sold")
-      let q = supabase
-        .from("listings")
-        .select("*")
-        .or("is_sold.eq.false,is_sold.is.null")
-        .order("created_at", { ascending: false });
+      let q = supabase.from("listings").select("*, profiles(full_name)").eq("is_sold", false).order("created_at", { ascending: false });
       if (activeCat !== "All") q = q.eq("category", activeCat);
-      const { data, error } = await q;
-      if (error) { setListings([]); return; }
-      // Normalise image_urls and is_sold
-      const normalised = (data || []).map(l => ({
-        ...l,
-        is_sold: l.is_sold === true ? true : false,
-        image_urls: (() => {
-          try {
-            if (!l.image_urls) return [];
-            if (Array.isArray(l.image_urls)) return l.image_urls;
-            return JSON.parse(l.image_urls);
-          } catch { return []; }
-        })(),
-      }));
-
-      // Enrich with seller profile data separately (avoids join schema issues)
-      const sellerIds = [...new Set(normalised.map(l => l.seller_id).filter(Boolean))];
-      let profileMap = {};
-      if (sellerIds.length > 0) {
-        try {
-          const { data: profileData } = await supabase
-            .from("profiles")
-            .select("id, full_name, avatar_url")
-            .in("id", sellerIds);
-          (profileData || []).forEach(p => { profileMap[p.id] = p; });
-        } catch { /* profiles table may not exist yet — show listings without names */ }
-      }
-
-      setListings(normalised.map(l => ({
-        ...l,
-        profiles: profileMap[l.seller_id] || null,
-      })));
+      const { data } = await q;
+      setListings(data || []);
     } catch { setListings([]); }
     finally { setListingsLoading(false); }
   };
@@ -1026,13 +806,9 @@ export default function UniSwap() {
     const urls = [];
     for (let i = 0; i < sellPhotos.length; i++) {
       const f = sellPhotos[i];
-      const ext = f.name.split(".").pop() || "jpg";
-      const path = `${user.id}/${lid}/${i}.${ext}`;
-      const { error } = await supabase.storage.from("listings").upload(path, f, { upsert: true, contentType: f.type });
-      if (!error) {
-        const { data: urlData } = supabase.storage.from("listings").getPublicUrl(path);
-        if (urlData?.publicUrl) urls.push(urlData.publicUrl);
-      }
+      const path = `${user.id}/${lid}/${i}.${f.name.split(".").pop()}`;
+      const { error } = await supabase.storage.from("listings").upload(path, f, { upsert: true });
+      if (!error) { const { data } = supabase.storage.from("listings").getPublicUrl(path); urls.push(data.publicUrl); }
       setUploadProgress(Math.round(((i + 1) / sellPhotos.length) * 100));
     }
     return urls;
@@ -1042,403 +818,167 @@ export default function UniSwap() {
     if (!sellTitle || !sellPrice) return showToast("Title and price required", "error");
     setLoading(true); setUploadProgress(0);
     try {
-      // Explicit is_sold: false — never rely on DB default
-      const insertPayload = {
-        title: sellTitle.trim(),
-        price: parseInt(sellPrice),
-        quantity: parseInt(sellQty) || 1,
-        category: sellCat,
-        condition: sellCond,
-        description: sellDesc.trim(),
-        seller_id: user.id,
-        is_sold: false,
-        image_urls: [],
-      };
-      const { data: listing, error } = await supabase
-        .from("listings")
-        .insert(insertPayload)
-        .select("*")
-        .single();
-      if (error) {
-        showToast(error.message || "Failed to post listing. Check your Supabase tables are created.", "error");
-        return;
-      }
-
-      // Upload photos and save as a real array
-      let finalUrls = [];
+      const { data: listing, error } = await supabase.from("listings").insert({ title: sellTitle, price: parseInt(sellPrice), category: sellCat, condition: sellCond, description: sellDesc, seller_id: user.id, is_sold: false, image_urls: [] }).select().single();
+      if (error) { showToast(error.message, "error"); return; }
       if (sellPhotos.length > 0) {
-        finalUrls = await uploadPhotos(listing.id);
-        await supabase.from("listings").update({ image_urls: finalUrls }).eq("id", listing.id);
+        const urls = await uploadPhotos(listing.id);
+        await supabase.from("listings").update({ image_urls: JSON.stringify(urls) }).eq("id", listing.id);
       }
-
       showToast("Listing posted! 🎉");
-
-      // Clear form state
-      setSellTitle(""); setSellPrice(""); setSellDesc(""); setSellQty("1");
-      setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
-
-      // Reset to "All" category so listing is always visible on home
-      setActiveCat("All");
-
-      // Optimistically prepend the new listing to home feed immediately
-      const newListing = { ...listing, image_urls: finalUrls, is_sold: false };
-      setListings(prev => [newListing, ...prev.filter(l => l.id !== newListing.id)]);
-
-      // Navigate home
-      setTab("home");
-
-      // Then do a real re-fetch in the background to get accurate server state
-      setTimeout(() => fetchListings(), 500);
-    } catch (e) {
-      showToast(e?.message || "Failed to post. Try again.", "error");
-    } finally {
-      setLoading(false);
-    }
+      setSellTitle(""); setSellPrice(""); setSellDesc(""); setSellPhotos([]); setSellPreviews([]); setUploadProgress(0);
+      fetchListings(); setTab("home");
+    } catch { showToast("Failed to post. Try again.", "error"); }
+    finally { setLoading(false); }
   };
 
   // ── Messages ───────────────────────────────────────────────────────────────
-
-  // Fetch profile info for a list of user IDs and cache in chatProfiles
-  const loadChatProfiles = async (uids) => {
-    const missing = uids.filter(id => id && !chatProfiles[id]);
-    if (!missing.length) return;
-    try {
-      const { data } = await supabase.from("profiles").select("id, full_name, avatar_url").in("id", missing);
-      if (data?.length) {
-        setChatProfiles(prev => {
-          const next = { ...prev };
-          data.forEach(p => { next[p.id] = p; });
-          return next;
-        });
-      }
-    } catch { /* profiles table may not exist — avatars will show initials */ }
-  };
-
-  // Count total unread messages for the current user
-  const refreshUnreadCount = async () => {
-    if (!user) return;
-    try {
-      const { count } = await supabase
-        .from("messages")
-        .select("id", { count: "exact", head: true })
-        .eq("receiver_id", user.id)
-        .eq("is_read", false);
-      setUnreadCount(count || 0);
-    } catch { setUnreadCount(0); }
-  };
-
-  useEffect(() => { if (tab === "messages" && user) { fetchChats(); refreshUnreadCount(); } }, [tab, user]);
-
-  // Global realtime subscription — runs once user is known
-  useEffect(() => {
-    if (!user) return;
-    refreshUnreadCount();
-
-    // Subscribe to all new messages directed at this user
-    const channel = supabase
-      .channel(`inbox:${user.id}`)
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-        filter: `receiver_id=eq.${user.id}`,
-      }, (payload) => {
-        const msg = payload.new;
-        // If the chat for this message is open, append live
-        setSelectedChat(prev => {
-          if (prev && prev.listing_id === msg.listing_id) {
-            setMessages(msgs => {
-              if (msgs.find(m => m.id === msg.id)) return msgs;
-              return [...msgs, msg];
-            });
-            // Mark as read immediately since chat is open
-            supabase.from("messages").update({ is_read: true }).eq("id", msg.id).then(() => {});
-          } else {
-            // Increment badge
-            setUnreadCount(n => n + 1);
-          }
-          return prev;
-        });
-        // Refresh chat list preview
-        fetchChats();
-      })
-      .subscribe();
-
-    realtimeRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  useEffect(() => { if (tab === "messages" && user) fetchChats(); }, [tab, user]);
 
   const fetchChats = async () => {
-    if (!user) return;
     try {
-      const { data } = await supabase
-        .from("messages")
-        .select("*, listings(title, image_urls)")
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order("created_at", { ascending: false });
-
-      // Group by listing_id keeping only the latest message per conversation
+      const { data } = await supabase.from("messages").select("*, listings(title)").or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at", { ascending: false });
       const seen = {}; const grouped = [];
       (data || []).forEach(m => { if (!seen[m.listing_id]) { seen[m.listing_id] = true; grouped.push(m); } });
       setChats(grouped);
-
-      // Load profiles for all conversation partners
-      const uids = grouped.map(m => m.sender_id === user.id ? m.receiver_id : m.sender_id).filter(Boolean);
-      loadChatProfiles([...new Set(uids)]);
     } catch { setChats([]); }
-  };
-
-  // Count unread per conversation (for badge on each row)
-  const getConvUnread = (chat) => {
-    // We will use a per-conversation unread derived from messages state
-    // For the list view we just check is_read on the last message
-    return (!chat.is_read && chat.receiver_id === user.id) ? 1 : 0;
   };
 
   const openChat = async (chat) => {
     setSelectedChat(chat);
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("listing_id", chat.listing_id)
-      .order("created_at", { ascending: true });
+    const { data } = await supabase.from("messages").select("*").eq("listing_id", chat.listing_id).order("created_at", { ascending: true });
     setMessages(data || []);
-
-    // Mark all messages in this convo as read
-    supabase.from("messages")
-      .update({ is_read: true })
-      .eq("listing_id", chat.listing_id)
-      .eq("receiver_id", user.id)
-      .then(() => refreshUnreadCount());
-
-    // Load the other person's profile
-    const otherId = chat.sender_id === user.id ? chat.receiver_id : chat.sender_id;
-    loadChatProfiles([otherId]);
   };
 
   const sendMessage = async () => {
     if (!msgInput.trim() || !selectedChat) return;
     const receiverId = selectedChat.sender_id === user.id ? selectedChat.receiver_id : selectedChat.sender_id;
-    const optimistic = { id: `opt-${Date.now()}`, sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: msgInput.trim(), is_read: false, created_at: new Date().toISOString() };
-    setMessages(p => [...p, optimistic]);
+    const { data } = await supabase.from("messages").insert({ sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: msgInput, is_read: false }).select().single();
+    if (data) setMessages(p => [...p, data]);
     setMsgInput("");
-    const { data } = await supabase.from("messages")
-      .insert({ sender_id: user.id, receiver_id: receiverId, listing_id: selectedChat.listing_id, content: optimistic.content, is_read: false })
-      .select().single();
-    if (data) {
-      setMessages(p => p.map(m => m.id === optimistic.id ? data : m));
-      fetchChats();
-    }
   };
 
   const startChat = async (listing) => {
-    const otherId = listing.seller_id;
-    const chat = { listing_id: listing.id, listings: { title: listing.title, image_urls: listing.image_urls }, sender_id: user.id, receiver_id: otherId };
+    const chat = { listing_id: listing.id, listings: { title: listing.title }, sender_id: user.id, receiver_id: listing.seller_id };
     setSelectedChat(chat);
     const { data } = await supabase.from("messages").select("*").eq("listing_id", listing.id).or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order("created_at", { ascending: true });
     setMessages(data || []);
-    loadChatProfiles([otherId]);
     setTab("messages");
   };
 
+  // ── Realtime: watch deals table for seller confirmation requests ──
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`deals:seller:${user.id}`)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "deals",
+        filter: `seller_id=eq.${user.id}`,
+      }, async (payload) => {
+        const deal = payload.new;
+        // Fetch listing details to show in confirmation modal
+        const { data: listing } = await supabase
+          .from("listings")
+          .select("*")
+          .eq("id", deal.listing_id)
+          .single();
+        setSellerConfirmModal({ deal, listing });
+      })
+      .subscribe();
+    realtimeRef.current = channel;
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  // ── Deal handlers ──────────────────────────────────────────────────────────
   const handleBuyNow = (listing) => {
     setDealModal(listing);
     setDealStep(1);
     setDealQty(1);
   };
 
-  const handleDealConfirm = async () => {
-    setDealStep(2);
-  };
-
-  const handleReport = async () => {
-    if (!reportReason.trim()) return showToast("Please describe the issue", "error");
-    setReportSubmitting(true);
-    try {
-      await supabase.from("support_tickets").insert({
-        user_id: user.id,
-        topic: "Report a listing",
-        message: `Reported listing ID: ${reportTarget?.id} — "${reportTarget?.title}"
-
-Reason: ${reportReason.trim()}`,
-        status: "open",
-      });
-      showToast("Report submitted. We'll review this listing.");
-      setReportTarget(null);
-      setReportReason("");
-    } catch { showToast("Failed to submit report. Try again.", "error"); }
-    finally { setReportSubmitting(false); }
-  };
+  const handleDealConfirm = () => setDealStep(2);
 
   const handleDealPaid = async () => {
     setDealStep(3);
-    const sellerId = dealModal.seller_id;
-    const listingId = dealModal.id;
-    const totalPrice = dealModal.price * dealQty;
-
+    setDealLoading(true);
     try {
-      // 1️⃣ Mark listing as sold in DB
-      await supabase
-        .from("listings")
-        .update({ is_sold: true })
-        .eq("id", listingId);
+      // Insert a deal row — seller's realtime subscription picks this up
+      const { error } = await supabase.from("deals").insert({
+        listing_id: dealModal.id,
+        buyer_id: user.id,
+        seller_id: dealModal.seller_id,
+        quantity: dealQty,
+        amount: dealModal.price * dealQty,
+        status: "pending",
+      });
+      if (error) { showToast("Failed to initiate deal. Try again.", "error"); setDealStep(2); return; }
 
-      // 2️⃣ Sync all local state so UI updates immediately everywhere
-      // — Remove from home feed
-      setListings(prev => prev.filter(l => l.id !== listingId));
-      // — Update seller's "My Listings" tab
-      setMyListings(prev =>
-        prev.map(l => l.id === listingId ? { ...l, is_sold: true } : l)
-      );
-      // — Update selected listing card so detail page reflects sold status
-      setSelectedListing(prev =>
-        prev?.id === listingId ? { ...prev, is_sold: true } : prev
-      );
-
-      // 3️⃣ Notify seller via in-app message
-      const safetyMsg = `🔒 PAYMENT CONFIRMED\n\nItem: ${dealModal.title}\nQty: ${dealQty}\nTotal: ₦${totalPrice.toLocaleString()}\n\nThe buyer has confirmed payment. This listing has been automatically marked as SOLD. Arrange delivery/pickup in this chat.`;
+      // Also send a chat message so there's a conversation thread
       await supabase.from("messages").insert({
         sender_id: user.id,
-        receiver_id: sellerId,
-        listing_id: listingId,
-        content: safetyMsg,
+        receiver_id: dealModal.seller_id,
+        listing_id: dealModal.id,
+        content: `💰 Payment of ₦${(dealModal.price * dealQty).toLocaleString()} sent for "${dealModal.title}" (Qty: ${dealQty}). Awaiting your confirmation.`,
         is_read: false,
       });
-    } catch { /* silent — sold state still updates locally */ }
-
-    setDealStep(4);
+      setDealStep(4);
+    } catch { showToast("Connection error. Try again.", "error"); setDealStep(2); }
+    finally { setDealLoading(false); }
   };
 
+  const handleSellerConfirm = async () => {
+    if (!sellerConfirmModal) return;
+    const { deal, listing } = sellerConfirmModal;
+    setDealLoading(true);
+    try {
+      // 1. Update deal status → confirmed
+      await supabase.from("deals").update({ status: "confirmed" }).eq("id", deal.id);
 
-  // ── Deal / Escrow Modal ───────────────────────────────────────────────────
-  const DealModal = () => {
-    if (!dealModal) return null;
-    const total = dealModal.price * dealQty;
-    const sellerName = sellerProfile?.full_name || dealModal.profiles?.full_name || "Seller";
-    const steps = ["Confirm Order", "Payment", "Awaiting Seller"];
-    return (
-      <div onClick={() => { setDealModal(null); setDealStep(1); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-        <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: "24px 24px 0 0", width: "100%", maxWidth: 520, padding: "24px 20px 40px", border: `1px solid ${C.border}`, maxHeight: "92vh", overflowY: "auto" }}>
-          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 20px" }} />
+      // 2. Mark listing as sold
+      await supabase.from("listings").update({ is_sold: true }).eq("id", listing.id);
 
-          {dealStep < 4 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 20 }}>
-              {steps.map((s, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, flex: i < 2 ? 1 : 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: dealStep > i+1 ? C.green : dealStep === i+1 ? C.accent : C.pill, color: dealStep > i+1 ? "#000" : dealStep === i+1 ? "#000" : C.muted, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      {dealStep > i+1 ? "✓" : i+1}
-                    </div>
-                    <span style={{ fontSize: 10, color: dealStep === i+1 ? C.text : C.muted, fontWeight: dealStep === i+1 ? 700 : 400, whiteSpace: "nowrap" }}>{s}</span>
-                  </div>
-                  {i < 2 && <div style={{ flex: 1, height: 1, background: dealStep > i+1 ? C.green : C.border, minWidth: 8 }} />}
-                </div>
-              ))}
-            </div>
-          )}
+      // 3. Sync local state — remove from home feed, update my listings
+      setListings(prev => prev.filter(l => l.id !== listing.id));
+      setMyListings(prev => prev.map(l => l.id === listing.id ? { ...l, is_sold: true } : l));
 
-          {dealStep === 1 && (
-            <div>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 18 }}>Confirm Order</div>
-              <div style={{ background: C.pill, borderRadius: 14, padding: 14, marginBottom: 18, display: "flex", gap: 12, alignItems: "center" }}>
-                {getImages(dealModal)[0]
-                  ? <img src={getImages(dealModal)[0]} alt="" style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-                  : <div style={{ width: 60, height: 60, borderRadius: 10, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>📦</div>}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dealModal.title}</div>
-                  <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Seller: {sellerName}</div>
-                  <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 4 }}>₦{dealModal.price?.toLocaleString()} each</div>
-                </div>
-              </div>
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Quantity</div>
-                <div style={{ display: "flex", alignItems: "center", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", height: 44, width: 140 }}>
-                  <button onClick={() => setDealQty(q => Math.max(1, q - 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
-                  <div style={{ flex: 1, textAlign: "center", color: C.text, fontSize: 15, fontWeight: 700 }}>{dealQty}</div>
-                  <button onClick={() => setDealQty(q => Math.min(dealModal.quantity || 99, q + 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
-                </div>
-              </div>
-              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "14px 16px", marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ color: C.muted, fontSize: 13 }}>Subtotal ({dealQty}x)</span>
-                  <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>₦{total.toLocaleString()}</span>
-                </div>
-                <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Total</span>
-                  <span style={{ color: C.accent, fontWeight: 800, fontSize: 17 }}>₦{total.toLocaleString()}</span>
-                </div>
-              </div>
-              <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}33`, borderRadius: 12, padding: "10px 14px", marginBottom: 18, display: "flex", gap: 10 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill={C.green} style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-                <span style={{ color: C.green, fontSize: 12, lineHeight: 1.6 }}><strong>Secure deal.</strong> Never pay outside UniSwap. Always confirm payment in-app.</span>
-              </div>
-              <button onClick={handleDealConfirm} style={{ width: "100%", height: 48, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
-                Continue to Payment →
-              </button>
-            </div>
-          )}
+      // 4. Notify buyer via message
+      await supabase.from("messages").insert({
+        sender_id: user.id,
+        receiver_id: deal.buyer_id,
+        listing_id: listing.id,
+        content: `✅ Payment confirmed for "${listing.title}"! The listing is now marked as sold. Let's arrange delivery/pickup.`,
+        is_read: false,
+      });
 
-          {dealStep === 2 && (
-            <div>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Make Payment</div>
-              <div style={{ color: C.muted, fontSize: 13, marginBottom: 18 }}>Transfer exactly <strong style={{ color: C.accent }}>₦{total.toLocaleString()}</strong> to the seller. Arrange bank details with seller in chat.</div>
-              <div style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 16 }}>
-                {[["Seller", sellerName], ["Item", dealModal.title], ["Amount", `₦${total.toLocaleString()}`], ["Payment Method", "Bank Transfer / Mobile Money"]].map(([label, value]) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ color: C.muted, fontSize: 13 }}>{label}</span>
-                    <span style={{ color: C.text, fontWeight: 600, fontSize: 13, maxWidth: "60%", textAlign: "right" }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ background: `${C.warm}15`, border: `1px solid ${C.warm}44`, borderRadius: 12, padding: "10px 14px", marginBottom: 18, display: "flex", gap: 10 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill={C.warm} style={{ flexShrink: 0, marginTop: 1 }}><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-                <span style={{ color: C.warm, fontSize: 12, lineHeight: 1.6 }}>Only pay after confirming bank details in chat. Tap "I've Paid" once transfer is done.</span>
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setDealStep(1)} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>← Back</button>
-                <button onClick={handleDealPaid} style={{ flex: 2, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.green},#00AA55)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>I've Paid ✓</button>
-              </div>
-            </div>
-          )}
+      showToast("Payment confirmed! Listing marked as sold. ✓");
+      setSellerConfirmModal(null);
+    } catch { showToast("Error confirming. Try again.", "error"); }
+    finally { setDealLoading(false); }
+  };
 
-          {dealStep === 3 && (
-            <div style={{ textAlign: "center", padding: "20px 0" }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-                <div style={{ width: 30, height: 30, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-              </div>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Notifying Seller…</div>
-              <div style={{ color: C.muted, fontSize: 14 }}>Sending your payment notification to the seller.</div>
-            </div>
-          )}
-
-          {dealStep === 4 && (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ width: 68, height: 68, borderRadius: "50%", background: `${C.green}22`, border: `2px solid ${C.green}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 32 }}>✓</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Payment Confirmed!</div>
-              <div style={{ background: `${C.green}22`, border: `1px solid ${C.green}55`, borderRadius: 20, padding: "4px 14px", display: "inline-block", marginBottom: 14 }}>
-                <span style={{ color: C.green, fontSize: 12, fontWeight: 800 }}>✓ Listing automatically marked as SOLD</span>
-              </div>
-              <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 }}>
-                <strong style={{ color: C.text }}>{sellerName}</strong> has been notified and this listing has been removed from the marketplace. Go to Messages to arrange delivery or pickup.
-              </div>
-              <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}22`, borderRadius: 14, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
-                {["Listing auto-marked as sold", "Seller notified via in-app message", "Arrange delivery/pickup in chat", "Rate the seller after deal closes"].map((tip, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: i < 3 ? 8 : 0 }}>
-                    <div style={{ width: 18, height: 18, borderRadius: "50%", background: `${C.green}33`, color: C.green, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</div>
-                    <span style={{ color: C.muted, fontSize: 13 }}>{tip}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => { setDealModal(null); setDealStep(1); startChat(dealModal); }} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.accent}44`, color: C.accent, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Open Chat</button>
-                <button onClick={() => { setDealModal(null); setDealStep(1); }} style={{ flex: 1, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Done</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  const handleSellerDispute = async () => {
+    if (!sellerConfirmModal) return;
+    const { deal, listing } = sellerConfirmModal;
+    try {
+      // Mark deal as disputed
+      await supabase.from("deals").update({ status: "disputed" }).eq("id", deal.id);
+    } catch { /* silent */ }
+    setSellerConfirmModal(null);
+    // Open chat with buyer so they can resolve
+    const chat = {
+      listing_id: listing.id,
+      listings: { title: listing.title },
+      sender_id: user.id,
+      receiver_id: deal.buyer_id,
+    };
+    setSelectedChat(chat);
+    const { data } = await supabase.from("messages").select("*")
+      .eq("listing_id", listing.id)
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .order("created_at", { ascending: true });
+    setMessages(data || []);
+    setTab("messages");
   };
 
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -1450,7 +990,6 @@ Reason: ${reportReason.trim()}`,
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <div style={{ fontSize: 56 }}>🛒</div>
       <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
-      <div style={{ color: C.muted, fontSize: 14 }}>Loading…</div>
       <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
@@ -1518,6 +1057,7 @@ Reason: ${reportReason.trim()}`,
             </div>
           )}
 
+          {/* ── FORGOT PASSWORD ── */}
           {authScreen === "reset" && !resetSent && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ textAlign: "center", marginBottom: 8 }}>
@@ -1534,6 +1074,7 @@ Reason: ${reportReason.trim()}`,
             </div>
           )}
 
+          {/* ── RESET EMAIL SENT ── */}
           {authScreen === "reset" && resetSent && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16, textAlign: "center" }}>
               <div style={{ fontSize: 64, marginBottom: 4 }}>📬</div>
@@ -1554,135 +1095,36 @@ Reason: ${reportReason.trim()}`,
             </div>
           )}
 
-          {authScreen === "signup" && signupStep === "form" && (
+          {authScreen === "signup" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
-                <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Step 1 of 2 — Your details</div>
-              </div>
-
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
               <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
-
-              <div>
-                <Input
-                  placeholder="Email (Gmail, Outlook, Yahoo…)"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  style={{ borderColor: email && email.includes("@") && !isAllowedEmail(email) ? "#FF5555" : email && isAllowedEmail(email) ? C.green : undefined }}
-                />
-                {email && email.includes("@") && !isAllowedEmail(email) && (
-                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                    Use Gmail, Outlook, Yahoo, iCloud or similar
-                  </div>
-                )}
-                {email && isAllowedEmail(email) && (
-                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
-                    Valid email address
-                  </div>
-                )}
-              </div>
-
+              <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
               <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
-
               <div style={{ position: "relative" }}>
-                <Input type={showPassword ? "text" : "password"} placeholder="Create password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
                 <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
               </div>
-              {password && password.length < 8 && (
-                <div style={{ color: "#FF5555", fontSize: 12, marginTop: -8, display: "flex", alignItems: "center", gap: 4 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                  Password must be at least 8 characters
-                </div>
-              )}
-
               <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
                 <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .2s" }}>
                   {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
                 </div>
                 <span style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
               </label>
-
-              <Btn primary onClick={handleSendOtp} style={{ opacity: acceptedTerms && isAllowedEmail(email) ? 1 : 0.5 }}>
-                {otpSending ? "Sending OTP…" : "Continue →"}
-              </Btn>
+              <Btn primary onClick={handleSignUp} style={{ opacity: acceptedTerms ? 1 : 0.5 }}>{loading ? "Creating…" : "Join UniSwap 🚀"}</Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
             </div>
           )}
 
-          {authScreen === "signup" && signupStep === "otp" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Verify your email</div>
-                <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Step 2 of 2 — Email verification</div>
-              </div>
-
-              {/* Email icon + address */}
-              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "16px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                </div>
-                <div>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Code sent to</div>
-                  <div style={{ color: C.accent, fontSize: 13, marginTop: 2 }}>{email}</div>
-                </div>
-              </div>
-
-              <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
-                Enter the <strong style={{ color: C.text }}>6-digit code</strong> from your inbox. Check your spam folder if you don't see it.
-              </div>
-
-              {/* OTP input */}
-              <div>
-                <Input
-                  placeholder="Enter 6-digit OTP"
-                  value={otpCode}
-                  onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  style={{ textAlign: "center", letterSpacing: 10, fontSize: 22, fontWeight: 800, borderColor: otpCode.length === 6 ? C.green : undefined }}
-                  maxLength={6}
-                />
-                {otpCode.length === 6 && (
-                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
-                    Code complete
-                  </div>
-                )}
-              </div>
-
-              <Btn primary onClick={handleVerifyOtp} style={{ opacity: otpCode.length === 6 ? 1 : 0.5 }}>
-                {loading ? "Verifying…" : "Verify & Create Account 🎉"}
-              </Btn>
-
-              {/* Resend */}
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13 }}>
-                Didn't receive it?{" "}
-                {otpResendTimer > 0
-                  ? <span style={{ color: C.muted }}>Resend in {otpResendTimer}s</span>
-                  : <span onClick={handleResendOtp} style={{ color: C.accent, fontWeight: 600, cursor: "pointer" }}>{otpSending ? "Sending…" : "Resend OTP"}</span>
-                }
-              </div>
-
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => { setSignupStep("form"); setOtpCode(""); }}>
-                ← Change email
-              </div>
-            </div>
-          )}
-
           <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}1A`, textAlign: "center" }}>
-            <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill={C.accent}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-              Email verified sign-ups only — your account is protected
-            </div>
+            <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed</div>
           </div>
         </div>
       </div>
     </div>
   );
 
-  // ── DB Setup Screen ───────────────────────────────────────────────────────
-
-
+  // ── New Password screen (after clicking reset email link) ──────────────────
   if (authScreen === "new-password") return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <style>{GLOBAL_CSS}</style>
@@ -1708,12 +1150,14 @@ Reason: ${reportReason.trim()}`,
               <Input type={showPassword ? "text" : "password"} placeholder="Repeat new password" value={newPasswordConfirm} onChange={e => setNewPasswordConfirm(e.target.value)} onKeyDown={e => e.key === "Enter" && handleNewPassword()} style={{ paddingRight: 48 }} />
               <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
             </div>
+            {/* Password match indicator */}
             {newPasswordConfirm && (
               <div style={{ marginTop: 6, fontSize: 12, color: newPassword === newPasswordConfirm ? C.green : "#FF5555", fontWeight: 600 }}>
                 {newPassword === newPasswordConfirm ? "✓ Passwords match" : "✕ Passwords do not match"}
               </div>
             )}
           </div>
+          {/* Strength hint */}
           {newPassword && (
             <div style={{ background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Password strength</div>
@@ -1749,43 +1193,200 @@ Reason: ${reportReason.trim()}`,
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       <Toast {...toast} />
       {modal && <Modal type={modal} onClose={() => setModal(null)} />}
-      {dealModal && <DealModal />}
+      {/* ── Buyer Deal Modal ── */}
+      {dealModal && (() => {
+        const imgs = (() => { try { const u = dealModal.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
+        const total = dealModal.price * dealQty;
+        const steps = ["Confirm", "Payment", "Awaiting"];
+        return (
+          <div onClick={() => { if (dealStep < 3) { setDealModal(null); setDealStep(1); } }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.78)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: "22px 22px 0 0", width: "100%", maxWidth: 520, padding: "20px 20px 36px", border: `1px solid ${C.border}`, maxHeight: "92vh", overflowY: "auto" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
 
-      {/* ── Report Listing Modal ── */}
-      {reportTarget && (
-        <div onClick={() => { setReportTarget(null); setReportReason(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 9001, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: "22px 22px 0 0", width: "100%", maxWidth: 520, padding: "24px 20px 36px", border: `1px solid ${C.border}` }}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border, margin: "0 auto 18px" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-              <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#FF555522", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF5555" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-              </div>
-              <div>
-                <div style={{ color: C.text, fontWeight: 800, fontSize: 16 }}>Report Listing</div>
-                <div style={{ color: C.muted, fontSize: 12, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>{reportTarget.title}</div>
-              </div>
-            </div>
-            <div style={{ color: C.muted, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Reason</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-              {["Fake / Scam listing", "Item already sold", "Inappropriate content", "Wrong price / misleading", "Other"].map(r => (
-                <div key={r} onClick={() => setReportReason(r)} style={{ background: reportReason === r ? "#FF555522" : C.pill, border: `1.5px solid ${reportReason === r ? "#FF5555" : C.border}`, borderRadius: 20, padding: "6px 14px", fontSize: 13, color: reportReason === r ? "#FF5555" : C.muted, cursor: "pointer", fontWeight: reportReason === r ? 700 : 400, transition: "all .15s" }}>{r}</div>
-              ))}
-            </div>
-            <textarea
-              value={reportReason}
-              onChange={e => setReportReason(e.target.value)}
-              placeholder="Describe the issue in more detail…"
-              style={{ width: "100%", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", color: C.text, fontSize: 14, resize: "none", height: 80, outline: "none", boxSizing: "border-box", lineHeight: 1.6, marginBottom: 16 }}
-            />
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setReportTarget(null); setReportReason(""); }} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>Cancel</button>
-              <button onClick={handleReport} disabled={reportSubmitting} style={{ flex: 2, height: 46, borderRadius: 12, background: reportSubmitting ? C.border : "#FF5555", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: reportSubmitting ? "default" : "pointer" }}>
-                {reportSubmitting ? "Submitting…" : "Submit Report"}
-              </button>
+              {/* Step indicator */}
+              {dealStep < 4 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 20 }}>
+                  {steps.map((s, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, flex: i < 2 ? 1 : 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: dealStep > i+1 ? C.green : dealStep === i+1 ? C.accent : C.pill, color: dealStep > i+1 ? "#000" : dealStep === i+1 ? "#000" : C.muted, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {dealStep > i+1 ? "✓" : i+1}
+                        </div>
+                        <span style={{ fontSize: 11, color: dealStep === i+1 ? C.text : C.muted, fontWeight: dealStep === i+1 ? 700 : 400, whiteSpace: "nowrap" }}>{s}</span>
+                      </div>
+                      {i < 2 && <div style={{ flex: 1, height: 1, background: dealStep > i+1 ? C.green : C.border, minWidth: 8 }} />}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Step 1: Confirm order ── */}
+              {dealStep === 1 && (
+                <div>
+                  <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 16 }}>Confirm Order</div>
+                  <div style={{ background: C.pill, borderRadius: 14, padding: 14, marginBottom: 16, display: "flex", gap: 12 }}>
+                    {imgs[0] ? <img src={imgs[0]} alt="" style={{ width: 58, height: 58, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                      : <div style={{ width: 58, height: 58, borderRadius: 10, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>📦</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dealModal.title}</div>
+                      <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{dealModal.condition} · {dealModal.category}</div>
+                      <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 4 }}>₦{dealModal.price?.toLocaleString()} each</div>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Quantity</div>
+                    <div style={{ display: "flex", alignItems: "center", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", height: 44, width: 130 }}>
+                      <button onClick={() => setDealQty(q => Math.max(1, q - 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>−</button>
+                      <div style={{ flex: 1, textAlign: "center", color: C.text, fontSize: 15, fontWeight: 700 }}>{dealQty}</div>
+                      <button onClick={() => setDealQty(q => Math.min(dealModal.quantity || 99, q + 1))} style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 20, fontWeight: 700, cursor: "pointer" }}>+</button>
+                    </div>
+                  </div>
+                  <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <span style={{ color: C.muted, fontSize: 13 }}>Subtotal ({dealQty}x)</span>
+                      <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>₦{total.toLocaleString()}</span>
+                    </div>
+                    <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Total</span>
+                      <span style={{ color: C.accent, fontWeight: 800, fontSize: 18 }}>₦{total.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}33`, borderRadius: 12, padding: "10px 14px", marginBottom: 16, display: "flex", gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={C.green} style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+                    <span style={{ color: C.green, fontSize: 12, lineHeight: 1.6 }}><strong>Secure deal.</strong> Seller must confirm payment before listing is marked sold.</span>
+                  </div>
+                  <button onClick={handleDealConfirm} style={{ width: "100%", height: 48, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+                    Continue to Payment →
+                  </button>
+                </div>
+              )}
+
+              {/* ── Step 2: Payment info ── */}
+              {dealStep === 2 && (
+                <div>
+                  <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Make Payment</div>
+                  <div style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>Transfer <strong style={{ color: C.accent }}>₦{total.toLocaleString()}</strong> to the seller. Get their bank details via chat first.</div>
+                  <div style={{ background: C.pill, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+                    {[["Item", dealModal.title], ["Quantity", dealQty], ["Total Amount", `₦${total.toLocaleString()}`], ["Payment", "Bank Transfer / Mobile Money"]].map(([label, value]) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ color: C.muted, fontSize: 13 }}>{label}</span>
+                        <span style={{ color: C.text, fontWeight: 600, fontSize: 13, maxWidth: "58%", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: `${C.warm}15`, border: `1px solid ${C.warm}44`, borderRadius: 12, padding: "10px 14px", marginBottom: 16, display: "flex", gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={C.warm} style={{ flexShrink: 0, marginTop: 1 }}><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                    <span style={{ color: C.warm, fontSize: 12, lineHeight: 1.6 }}>Only tap "I've Paid" after completing the transfer. The seller will receive a confirmation request.</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => setDealStep(1)} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>← Back</button>
+                    <button onClick={handleDealPaid} disabled={dealLoading} style={{ flex: 2, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.green},#00AA55)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: dealLoading ? "default" : "pointer", opacity: dealLoading ? 0.7 : 1 }}>
+                      {dealLoading ? "Sending…" : "I've Paid ✓"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 3: Processing ── */}
+              {dealStep === 3 && (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <div style={{ width: 52, height: 52, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                    <div style={{ width: 28, height: 28, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  </div>
+                  <div style={{ color: C.text, fontSize: 16, fontWeight: 700 }}>Sending to seller…</div>
+                </div>
+              )}
+
+              {/* ── Step 4: Done ── */}
+              {dealStep === 4 && (
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ width: 64, height: 64, borderRadius: "50%", background: `${C.accent}22`, border: `2px solid ${C.accent}44`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 30 }}>⏳</div>
+                  <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Awaiting Seller</div>
+                  <div style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}33`, borderRadius: 20, padding: "4px 14px", display: "inline-block", marginBottom: 14 }}>
+                    <span style={{ color: C.accent, fontSize: 12, fontWeight: 700 }}>Deal recorded · Pending seller confirmation</span>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.8, marginBottom: 18 }}>
+                    The seller has been notified. Once they confirm receipt of payment, the listing will be automatically marked as sold.
+                  </div>
+                  <div style={{ background: C.pill, borderRadius: 14, padding: "12px 14px", marginBottom: 18, textAlign: "left" }}>
+                    {[
+                      ["Deal row created in database", C.green],
+                      ["Seller notified via real-time alert", C.green],
+                      ["Listing marked sold after seller confirms", C.muted],
+                      ["Rate seller after deal closes", C.muted],
+                    ].map(([tip, col], i) => (
+                      <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: i < 3 ? 8 : 0 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", background: col === C.green ? `${C.green}33` : C.border, color: col, fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {col === C.green ? "✓" : "○"}
+                        </div>
+                        <span style={{ color: col, fontSize: 12 }}>{tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => { setDealModal(null); setDealStep(1); startChat(dealModal); }} style={{ flex: 1, height: 46, borderRadius: 12, background: C.pill, border: `1px solid ${C.accent}44`, color: C.accent, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Open Chat</button>
+                    <button onClick={() => { setDealModal(null); setDealStep(1); }} style={{ flex: 1, height: 46, borderRadius: 12, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Done</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* ── Seller Payment Confirmation Modal ── */}
+      {sellerConfirmModal && (() => {
+        const { deal, listing } = sellerConfirmModal;
+        const imgs = (() => { try { const u = listing?.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div style={{ background: C.card, borderRadius: 24, width: "100%", maxWidth: 420, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+
+              {/* Header */}
+              <div style={{ background: `${C.green}15`, borderBottom: `1px solid ${C.green}33`, padding: "20px 20px 16px", textAlign: "center" }}>
+                <div style={{ width: 52, height: 52, borderRadius: "50%", background: `${C.green}22`, border: `2px solid ${C.green}44`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", fontSize: 24 }}>💰</div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 19, fontWeight: 800, marginBottom: 4 }}>Payment Confirmation</div>
+                <div style={{ color: C.muted, fontSize: 13 }}>A buyer has initiated a deal on your listing</div>
+              </div>
+
+              <div style={{ padding: "18px 20px" }}>
+                {/* Deal summary card */}
+                <div style={{ background: C.pill, borderRadius: 14, padding: 14, marginBottom: 14, display: "flex", gap: 12 }}>
+                  {imgs[0] ? <img src={imgs[0]} alt="" style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                    : <div style={{ width: 54, height: 54, borderRadius: 10, background: C.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>📦</div>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{listing?.title}</div>
+                    <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Qty: {deal.quantity}</div>
+                    <div style={{ color: C.green, fontWeight: 800, fontSize: 17, marginTop: 4 }}>₦{deal.amount?.toLocaleString()}</div>
+                  </div>
+                </div>
+
+                {/* Question */}
+                <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+                  <div style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Have you received ₦{deal.amount?.toLocaleString()}?</div>
+                  <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.6 }}>Only confirm if the full payment has been received. This will mark the listing as sold and notify the buyer.</div>
+                </div>
+
+                {/* Buttons */}
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={handleSellerDispute} disabled={dealLoading}
+                    style={{ flex: 1, height: 48, borderRadius: 14, background: C.pill, border: `1.5px solid #FF555544`, color: "#FF5555", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                    Not Received
+                  </button>
+                  <button onClick={handleSellerConfirm} disabled={dealLoading}
+                    style={{ flex: 1, height: 48, borderRadius: 14, background: `linear-gradient(135deg,${C.green},#00AA55)`, border: "none", color: "#000", fontWeight: 800, fontSize: 15, cursor: dealLoading ? "default" : "pointer", opacity: dealLoading ? 0.7 : 1 }}>
+                    {dealLoading ? "Confirming…" : "Yes, Confirm ✓"}
+                  </button>
+                </div>
+                <div style={{ textAlign: "center", color: C.muted, fontSize: 11, marginTop: 10, lineHeight: 1.5 }}>
+                  "Not Received" opens chat to resolve with the buyer directly.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {reviewModal && (
         <ReviewModal
@@ -1799,26 +1400,14 @@ Reason: ${reportReason.trim()}`,
       )}
       {contactModal && <ContactEmailModal userEmail={profile?.email || user?.email} onClose={() => setContactModal(false)} />}
       <aside className="sidebar">
-        <div className="sidebar-logo" onClick={() => handleTabChange("home")} style={{ cursor: "pointer" }}>
+        <div className="sidebar-logo" onClick={() => { setTab("home"); setSelectedListing(null); setSelectedChat(null); setProfileTab("menu"); }} style={{ cursor: "pointer" }}>
           <span style={{ fontSize: 26 }}>🛒</span>
           <span className="sidebar-logo-text">UniSwap</span>
         </div>
         {NAV_ITEMS.map(({ id, icon, label }) => (
           <div key={id} className={`nav-item ${tab === id ? "active" : ""}`} onClick={() => handleTabChange(id)}>
-            <span className="nav-icon" style={{ position: "relative" }}>
-              {icon}
-              {id === "messages" && unreadCount > 0 && (
-                <span style={{ position: "absolute", top: -4, right: -6, background: "#FF5555", color: "#fff", borderRadius: "50%", minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 3px", border: `2px solid ${C.sidebar}` }}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </span>
+            <span className="nav-icon">{icon}</span>
             <span>{label}</span>
-            {id === "messages" && unreadCount > 0 && tab !== "messages" && (
-              <span style={{ marginLeft: "auto", background: "#FF5555", color: "#fff", borderRadius: 10, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-                {unreadCount > 9 ? "9+" : unreadCount}
-              </span>
-            )}
           </div>
         ))}
         <div style={{ marginTop: "auto" }}>
@@ -1834,14 +1423,6 @@ Reason: ${reportReason.trim()}`,
 
       {/* ── MAIN CONTENT ── */}
       <main className="main-content">
-
-        {/* Mobile-only logo — navigates to home from anywhere */}
-        {!selectedListing && (
-          <div className="mobile-logo-bar" onClick={() => handleTabChange("home")}>
-            <span style={{ fontSize: 22 }}>🛒</span>
-            <span className="mobile-logo-bar-text">UniSwap</span>
-          </div>
-        )}
 
         {/* ─── HOME ─── */}
         {tab === "home" && !selectedListing && (() => {
@@ -1859,13 +1440,20 @@ Reason: ${reportReason.trim()}`,
           return (
           <>
             <div className="page-header">
-              <div>
-                <div style={{ color: C.muted, fontSize: 14, marginBottom: 2 }}>Good day 👋</div>
-                <div className="page-title">Marketplace</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span onClick={() => { setSearchQuery(""); setActiveCat("All"); setSelectedListing(null); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <span style={{ fontSize: 22 }}>🛒</span>
+                  <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</span>
+                </span>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 13, marginBottom: 1 }}>Good day 👋</div>
+                  <div className="page-title">Marketplace</div>
+                </div>
               </div>
-              <Avatar initials={initials} size={42} src={avatarUrl} />
+              <Avatar initials={initials} size={42} src={avatarUrl} onClick={() => setTab("profile")} style={{ cursor: "pointer" }} />
             </div>
 
+            {/* Search bar */}
             <div style={{ padding: "0 16px 16px" }}>
               <div style={{ position: "relative" }}>
                 <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: searchFocused ? C.accent : C.muted, display: "flex", alignItems: "center", transition: "color .2s" }}>
@@ -1884,6 +1472,7 @@ Reason: ${reportReason.trim()}`,
                 )}
               </div>
 
+              {/* Search result count */}
               {searchQuery.trim() && (
                 <div style={{ marginTop: 8, color: C.muted, fontSize: 13 }}>
                   {filtered.length === 0 ? (
@@ -1895,12 +1484,14 @@ Reason: ${reportReason.trim()}`,
               )}
             </div>
 
+            {/* Category filter — hide when searching */}
             {!searchQuery.trim() && (
               <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 16px", scrollbarWidth: "none" }}>
                 {CATEGORIES.map(c => <Pill key={c} active={activeCat === c} onClick={() => setActiveCat(c)}>{c}</Pill>)}
               </div>
             )}
 
+            {/* Listings grid */}
             {listingsLoading ? <Loader /> : (
               <div className="listing-grid">
                 {filtered.length === 0 && (
@@ -1923,7 +1514,7 @@ Reason: ${reportReason.trim()}`,
                 {filtered.map(l => {
                   const imgs = getImages(l);
                   return (
-                    <div key={l.id} className="listing-card" onClick={() => { setSelectedListing(l); setActivePhoto(0); setSellerProfile(null); setSellerReviews([]); fetchSellerProfile(l.seller_id); fetchSellerReviews(l.seller_id); }}>
+                    <div key={l.id} className="listing-card" onClick={() => { setSelectedListing(l); setActivePhoto(0); }}>
                       <div style={{ height: 140, background: C.pill, position: "relative", overflow: "hidden" }}>
                         {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48 }}>📦</div>}
                         <div style={{ position: "absolute", top: 8, left: 8, background: `${C.bg}DD`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color: C.muted, fontWeight: 600 }}>{l.condition}</div>
@@ -1949,219 +1540,97 @@ Reason: ${reportReason.trim()}`,
         {/* ─── LISTING DETAIL ─── */}
         {tab === "home" && selectedListing && (() => {
           const imgs = getImages(selectedListing);
-          const seller = sellerProfile || selectedListing.profiles;
-          const sellerName = seller?.full_name || "Campus Seller";
-          const sellerInitials = sellerName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
-          const sellerRating = seller?.rating || 0;
-          const postedDate = new Date(selectedListing.created_at);
-          const daysAgo = Math.floor((Date.now() - postedDate) / 86400000);
-          const dateStr = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
-          const isMine = selectedListing.seller_id === user?.id;
-
           return (
-            <div className="detail-panel" style={{ position: "relative" }}>
-
-              {/* ── Lightbox fullscreen viewer ── */}
-              {lightboxOpen && imgs.length > 0 && (
-                <div onClick={() => setLightboxOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.96)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div onClick={e => e.stopPropagation()} style={{ position: "relative", width: "100%", maxWidth: 600, maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <img src={imgs[activePhoto]} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12 }} />
-                    {imgs.length > 1 && (
-                      <>
-                        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                          {imgs.map((_, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: i === activePhoto ? 24 : 8, height: 8, borderRadius: 4, background: i === activePhoto ? C.accent : "#ffffff55", cursor: "pointer", transition: "all .2s" }} />)}
-                        </div>
-                        {activePhoto > 0 && <div onClick={() => setActivePhoto(p => p-1)} style={{ position: "absolute", left: 8, top: "40%", background: "rgba(255,255,255,.15)", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 22, color: "#fff" }}>‹</div>}
-                        {activePhoto < imgs.length-1 && <div onClick={() => setActivePhoto(p => p+1)} style={{ position: "absolute", right: 8, top: "40%", background: "rgba(255,255,255,.15)", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 22, color: "#fff" }}>›</div>}
-                      </>
-                    )}
-                    <div style={{ color: "#ffffff88", fontSize: 13, marginTop: 10 }}>{activePhoto + 1} / {imgs.length} — tap outside to close</div>
-                  </div>
-                  <div onClick={() => setLightboxOpen(false)} style={{ position: "absolute", top: 20, right: 20, color: "#fff", fontSize: 28, cursor: "pointer", background: "rgba(255,255,255,.1)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</div>
-                </div>
-              )}
-
-              {/* ── Header bar ── */}
-              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 10, background: C.card, flexShrink: 0 }}>
-                <div onClick={() => { setSelectedListing(null); setActivePhoto(0); setSellerProfile(null); setSellerReviews([]); }}
-                  style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0, fontSize: 18 }}>←</div>
-                <span style={{ color: C.text, fontWeight: 700, fontSize: 15, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedListing.title}</span>
-                {/* Report button — only for other people's listings */}
-                {!isMine && (
-                  <div onClick={() => setReportTarget(selectedListing)}
-                    title="Report this listing"
-                    style={{ width: 36, height: 36, borderRadius: "50%", background: C.pill, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF5555" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-                  </div>
-                )}
-                {/* Share button */}
-                <div onClick={() => {
-                  const text = `Check out "${selectedListing.title}" for ₦${selectedListing.price?.toLocaleString()} on UniSwap!`;
-                  if (navigator.share) { navigator.share({ title: selectedListing.title, text }); }
-                  else { navigator.clipboard?.writeText(text).then(() => showToast("Link copied!")); }
-                }} style={{ width: 36, height: 36, borderRadius: "50%", background: C.pill, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                </div>
-                {/* Save button */}
-                <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }}
-                  style={{ width: 36, height: 36, borderRadius: "50%", background: savedItems[selectedListing.id] ? `${C.warm}22` : C.pill, border: savedItems[selectedListing.id] ? `1px solid ${C.warm}55` : "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all .2s" }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill={savedItems[selectedListing.id] ? C.warm : "none"} stroke={savedItems[selectedListing.id] ? C.warm : C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-                </div>
+            <div className="detail-panel">
+              <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card }}>
+                <div onClick={() => { setSelectedListing(null); setActivePhoto(0); }} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%" }}>←</div>
+                <span style={{ color: C.text, fontWeight: 700, fontSize: 16 }}>Listing Detail</span>
+                <div onClick={e => { e.stopPropagation(); toggleSaved(selectedListing); }} style={{ marginLeft: "auto", fontSize: 22, cursor: "pointer" }}>{savedItems[selectedListing.id] ? "❤️" : "🤍"}</div>
               </div>
-
-              {/* ── Scrollable content ── */}
-              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 110 }}>
-
+              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 100 }}>
                 {/* Photo gallery */}
                 {imgs.length > 0 ? (
                   <div>
-                    {/* Main photo */}
-                    <div onClick={() => setLightboxOpen(true)} style={{ height: 280, background: C.pill, position: "relative", overflow: "hidden", cursor: "zoom-in" }}>
+                    <div style={{ height: 260, background: C.pill, position: "relative", overflow: "hidden" }}>
                       <img src={imgs[activePhoto]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      {/* Zoom hint */}
-                      <div style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,.5)", borderRadius: 20, padding: "4px 10px", fontSize: 11, color: "#fff", display: "flex", alignItems: "center", gap: 4 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                        Tap to zoom
-                      </div>
-                      {/* Nav arrows */}
                       {imgs.length > 1 && <>
-                        {activePhoto > 0 && <div onClick={e => { e.stopPropagation(); setActivePhoto(p => p-1); }} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.55)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20 }}>‹</div>}
-                        {activePhoto < imgs.length-1 && <div onClick={e => { e.stopPropagation(); setActivePhoto(p => p+1); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.55)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 20 }}>›</div>}
-                        <div style={{ position: "absolute", bottom: 12, right: 12, background: "rgba(0,0,0,.55)", borderRadius: 12, padding: "3px 10px", fontSize: 12, color: "#fff", fontWeight: 600 }}>{activePhoto+1}/{imgs.length}</div>
+                        <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 6 }}>
+                          {imgs.map((_, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: i === activePhoto ? 22 : 7, height: 7, borderRadius: 4, background: i === activePhoto ? C.accent : "#ffffff88", transition: "all .2s", cursor: "pointer" }} />)}
+                        </div>
+                        {activePhoto > 0 && <div onClick={() => setActivePhoto(p => p - 1)} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.6)", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 18 }}>‹</div>}
+                        {activePhoto < imgs.length - 1 && <div onClick={() => setActivePhoto(p => p + 1)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,.6)", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#fff", fontSize: 18 }}>›</div>}
                       </>}
                     </div>
-                    {/* Thumbnail strip */}
                     {imgs.length > 1 && (
-                      <div style={{ display: "flex", gap: 8, padding: "10px 16px", overflowX: "auto", scrollbarWidth: "none" }}>
-                        {imgs.map((url, i) => (
-                          <div key={i} onClick={() => setActivePhoto(i)} style={{ width: 60, height: 60, borderRadius: 10, overflow: "hidden", border: `2.5px solid ${i === activePhoto ? C.accent : "transparent"}`, flexShrink: 0, cursor: "pointer", transition: "border .15s", boxShadow: i === activePhoto ? `0 0 0 1px ${C.accent}44` : "none" }}>
-                            <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          </div>
-                        ))}
+                      <div style={{ display: "flex", gap: 8, padding: "12px 16px", overflowX: "auto" }}>
+                        {imgs.map((url, i) => <div key={i} onClick={() => setActivePhoto(i)} style={{ width: 56, height: 56, borderRadius: 10, overflow: "hidden", border: `2px solid ${i === activePhoto ? C.accent : "transparent"}`, flexShrink: 0, cursor: "pointer" }}><img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /></div>)}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div style={{ height: 220, background: `${C.accent}0D`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 72, flexDirection: "column", gap: 10 }}>
-                    <span>📦</span>
-                    <span style={{ fontSize: 13, color: C.muted }}>No photos</span>
-                  </div>
+                  <div style={{ height: 220, background: `${C.accent}0D`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 80 }}>📦</div>
                 )}
-
-                <div style={{ padding: "18px 18px 0" }}>
-
-                  {/* Title, price, condition */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                <div style={{ padding: "20px 20px 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, lineHeight: 1.3, marginBottom: 6 }}>{selectedListing.title}</div>
-                      <div style={{ color: C.accent, fontSize: 28, fontWeight: 800 }}>₦{selectedListing.price?.toLocaleString()}</div>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 24, fontWeight: 800, lineHeight: 1.3 }}>{selectedListing.title}</div>
+                      <div style={{ color: C.accent, fontSize: 26, fontWeight: 800, marginTop: 6 }}>₦{selectedListing.price?.toLocaleString()}</div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                      <div style={{ background: `${C.green}22`, color: C.green, padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{selectedListing.condition}</div>
-                      <div style={{ background: C.pill, color: C.muted, padding: "5px 12px", borderRadius: 20, fontSize: 11, whiteSpace: "nowrap" }}>{selectedListing.category}</div>
-                    </div>
+                    <div style={{ background: `${C.green}22`, color: C.green, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{selectedListing.condition}</div>
                   </div>
-
-                  {/* Meta row */}
-                  <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-                    <div style={{ background: C.pill, borderRadius: 20, padding: "5px 12px", fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 5 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      {dateStr}
-                    </div>
-                    {(selectedListing.quantity > 1 || selectedListing.quantity != null) && (
-                      <div style={{ background: `${C.accent}15`, color: C.accent, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
-                        Qty: {selectedListing.quantity}
-                      </div>
-                    )}
-                    {savedItems[selectedListing.id] && (
-                      <div style={{ background: `${C.warm}18`, color: C.warm, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600 }}>Saved</div>
-                    )}
+                  <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                    <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>📦 {selectedListing.category}</div>
+                    <div style={{ background: C.pill, borderRadius: 10, padding: "8px 14px", fontSize: 12, color: C.muted }}>🕐 {new Date(selectedListing.created_at).toLocaleDateString()}</div>
                   </div>
-
-                  {/* Description */}
-                  {selectedListing.description && (
-                    <div style={{ marginBottom: 20 }}>
-                      <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 8 }}>About this item</div>
-                      <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.8, background: C.pill, borderRadius: 14, padding: "14px 16px" }}>{selectedListing.description}</div>
-                    </div>
-                  )}
-
-                  {/* Seller card */}
-                  <div style={{ background: C.pill, borderRadius: 18, padding: "16px", marginBottom: 20, border: `1px solid ${C.border}` }}>
-                    <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Seller</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <Avatar initials={sellerInitials} size={52} src={seller?.avatar_url} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: C.text, fontWeight: 800, fontSize: 16, marginBottom: 3 }}>{sellerName}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green} stroke="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
-                          <span style={{ color: C.green, fontSize: 12, fontWeight: 600 }}>Campus verified</span>
+                  <div style={{ marginTop: 20, padding: 16, background: C.pill, borderRadius: 16, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}
+                    onClick={() => { fetchSellerReviews(selectedListing.seller_id); }}>
+                    <Avatar initials={(selectedListing.profiles?.full_name || "??").slice(0, 2).toUpperCase()} size={46} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>{selectedListing.profiles?.full_name || "Unknown"}</div>
+                      <div style={{ color: C.green, fontSize: 12, marginTop: 2 }}>✓ Campus verified seller</div>
+                      {selectedListing.profiles?.rating > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                          <StarRating rating={Math.round(selectedListing.profiles.rating)} size={14} />
+                          <span style={{ color: C.muted, fontSize: 12 }}>{selectedListing.profiles.rating.toFixed(1)}</span>
                         </div>
-                        {sellerRating > 0 ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <StarRating rating={Math.round(sellerRating)} size={13} />
-                            <span style={{ color: C.muted, fontSize: 12 }}>{sellerRating.toFixed(1)} · {sellerReviews.length} review{sellerReviews.length !== 1 ? "s" : ""}</span>
-                          </div>
-                        ) : (
-                          <div style={{ color: C.muted, fontSize: 12 }}>No reviews yet</div>
-                        )}
-                      </div>
-                    </div>
-                    {seller?.bio && (
-                      <div style={{ marginTop: 12, color: C.muted, fontSize: 13, lineHeight: 1.6, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>{seller.bio}</div>
-                    )}
-                  </div>
-
-                  {/* Reviews section */}
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>
-                        Reviews {sellerReviews.length > 0 && <span style={{ color: C.muted, fontWeight: 400, fontSize: 13 }}>({sellerReviews.length})</span>}
-                      </div>
-                      {!isMine && sellerReviews.length > 0 && (
-                        <div onClick={() => setReviewModal(selectedListing)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ Write review</div>
                       )}
                     </div>
-                    {reviewsLoading ? <Loader /> : sellerReviews.length === 0 ? (
-                      <div style={{ background: C.pill, borderRadius: 14, padding: "20px", textAlign: "center" }}>
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="#FFD700" stroke="#FFD700" strokeWidth="1" style={{ marginBottom: 8 }}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                        <div style={{ color: C.muted, fontSize: 14 }}>No reviews yet for this seller</div>
-                        {!isMine && <div onClick={() => setReviewModal(selectedListing)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, marginTop: 8, cursor: "pointer" }}>Be the first to review →</div>}
-                      </div>
-                    ) : sellerReviews.map(r => (
-                      <div key={r.id} style={{ background: C.pill, borderRadius: 14, padding: "14px 16px", marginBottom: 10, border: `1px solid ${C.border}` }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={32} />
-                            <div>
-                              <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</div>
-                              <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{new Date(r.created_at).toLocaleDateString()}</div>
-                            </div>
-                          </div>
-                          <StarRating rating={r.rating} size={13} />
-                        </div>
-                        {r.comment && <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{r.comment}</div>}
-                      </div>
-                    ))}
                   </div>
+                  {selectedListing.description && <div style={{ marginTop: 16, color: C.muted, fontSize: 14, lineHeight: 1.8 }}>{selectedListing.description}</div>}
 
+                  {/* Reviews section */}
+                  {sellerReviews.length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 12 }}>⭐ Seller Reviews ({sellerReviews.length})</div>
+                      {reviewsLoading ? <Loader /> : sellerReviews.map(r => (
+                        <div key={r.id} style={{ background: C.pill, borderRadius: 14, padding: "14px 16px", marginBottom: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Avatar initials={(r.profiles?.full_name || "??").slice(0,2).toUpperCase()} size={28} />
+                              <span style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{r.profiles?.full_name?.split(" ")[0] || "Student"}</span>
+                            </div>
+                            <StarRating rating={r.rating} size={13} />
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>{r.comment}</div>
+                          <div style={{ color: C.border, fontSize: 11, marginTop: 6 }}>{new Date(r.created_at).toLocaleDateString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* ── Sticky CTA bar ── */}
               <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 16px 28px", background: C.card, borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
-                {isMine ? (
-                  <div style={{ flex: 1, textAlign: "center", color: C.muted, fontSize: 14, padding: "10px 0" }}>This is your listing</div>
+                {selectedListing.seller_id === user?.id ? (
+                  <div style={{ flex: 1, textAlign: "center", color: C.muted, fontSize: 14, padding: "12px 0" }}>This is your listing</div>
                 ) : (
                   <>
                     <button onClick={() => startChat(selectedListing)}
-                      style={{ width: 50, height: 50, borderRadius: 16, background: C.pill, border: `1.5px solid ${C.accent}44`, color: C.accent, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      style={{ width: 50, height: 50, borderRadius: 14, background: C.pill, border: `1.5px solid ${C.accent}44`, color: C.accent, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                     </button>
                     <button onClick={() => handleBuyNow(selectedListing)}
-                      style={{ flex: 1, height: 50, borderRadius: 16, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h5l3 5v3h-8V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                      style={{ flex: 1, height: 50, borderRadius: 14, background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", color: "#000", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
                       Buy Now
                     </button>
                   </>
@@ -2171,233 +1640,91 @@ Reason: ${reportReason.trim()}`,
           );
         })()}
 
-        {/* ─── MESSAGES LIST ─── */}
+        {/* ─── MESSAGES ─── */}
         {tab === "messages" && !selectedChat && (
           <>
-            <div className="page-header" style={{ marginBottom: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="page-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span onClick={() => { setTab("home"); setSelectedListing(null); setSelectedChat(null); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <span style={{ fontSize: 22 }}>🛒</span>
+                  <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</span>
+                </span>
                 <div className="page-title">Messages</div>
-                {unreadCount > 0 && (
-                  <div style={{ background: "#FF5555", color: "#fff", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 800 }}>
-                    {unreadCount} unread
-                  </div>
-                )}
               </div>
             </div>
-
-            <div style={{ padding: "16px 0 80px" }}>
+            <div style={{ padding: "0 0 80px" }}>
               {chats.length === 0 ? (
                 <div style={{ textAlign: "center", color: C.muted, padding: "80px 20px" }}>
-                  <div style={{ fontSize: 56, marginBottom: 16 }}>💬</div>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 8 }}>No conversations yet</div>
-                  <div style={{ fontSize: 14 }}>Browse listings and tap Message on any item.</div>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>No conversations yet</div>
+                  <div style={{ fontSize: 14, marginTop: 4 }}>Browse listings and message a seller!</div>
                 </div>
-              ) : chats.map(c => {
-                const otherId = c.sender_id === user.id ? c.receiver_id : c.sender_id;
-                const otherProfile = chatProfiles[otherId];
-                const otherName = otherProfile?.full_name || "Campus User";
-                const otherInitials = otherName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
-                const isUnread = !c.is_read && c.receiver_id === user.id;
-                const listingImgs = (() => { try { const u = c.listings?.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
-                const thumb = listingImgs[0] || null;
-
-                // Format time: today show time, older show date
-                const msgDate = new Date(c.created_at);
-                const now = new Date();
-                const isToday = msgDate.toDateString() === now.toDateString();
-                const timeStr = isToday
-                  ? msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : msgDate.toLocaleDateString([], { month: "short", day: "numeric" });
-
-                return (
-                  <div key={c.id} onClick={() => openChat(c)}
-                    style={{ padding: "14px 20px", display: "flex", gap: 14, alignItems: "center", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, transition: "background .15s", background: isUnread ? `${C.accent}08` : "transparent", position: "relative" }}
-                    onMouseEnter={e => e.currentTarget.style.background = C.pill}
-                    onMouseLeave={e => e.currentTarget.style.background = isUnread ? `${C.accent}08` : "transparent"}>
-
-                    {/* Unread left bar */}
-                    {isUnread && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: C.accent, borderRadius: "0 3px 3px 0" }} />}
-
-                    {/* Avatar with listing thumbnail overlay */}
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                      <Avatar initials={otherInitials} size={50} src={otherProfile?.avatar_url} />
-                      {thumb && (
-                        <div style={{ position: "absolute", bottom: -2, right: -4, width: 22, height: 22, borderRadius: 6, overflow: "hidden", border: `2px solid ${C.card}` }}>
-                          <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                      )}
+              ) : chats.map(c => (
+                <div key={c.id} onClick={() => openChat(c)} style={{ padding: "16px 24px", display: "flex", gap: 14, alignItems: "center", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <Avatar initials="??" size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <div style={{ color: C.text, fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.listings?.title}</div>
+                      <div style={{ color: C.muted, fontSize: 12, flexShrink: 0 }}>{new Date(c.created_at).toLocaleDateString()}</div>
                     </div>
-
-                    {/* Text content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                        <div style={{ color: isUnread ? C.text : C.text, fontWeight: isUnread ? 800 : 600, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {otherName}
-                        </div>
-                        <div style={{ color: isUnread ? C.accent : C.muted, fontSize: 12, flexShrink: 0, fontWeight: isUnread ? 700 : 400 }}>{timeStr}</div>
-                      </div>
-                      <div style={{ color: C.muted, fontSize: 12, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: "italic" }}>
-                        Re: {c.listings?.title}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ color: isUnread ? C.text : C.muted, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: isUnread ? 600 : 400, flex: 1 }}>
-                          {c.sender_id === user.id ? "You: " : ""}{c.content}
-                        </div>
-                        {isUnread && (
-                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.accent, flexShrink: 0 }} />
-                        )}
-                      </div>
-                    </div>
+                    <div style={{ color: C.muted, fontSize: 13, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.content}</div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </>
         )}
 
         {/* ─── CHAT DETAIL ─── */}
-        {tab === "messages" && selectedChat && (() => {
-          const otherId = selectedChat.sender_id === user.id ? selectedChat.receiver_id : selectedChat.sender_id;
-          const otherProfile = chatProfiles[otherId];
-          const otherName = otherProfile?.full_name || "Campus User";
-          const otherInitials = otherName.split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
-          const listingImgs = (() => { try { const u = selectedChat.listings?.image_urls; if (!u) return []; if (Array.isArray(u)) return u; return JSON.parse(u); } catch { return []; } })();
-          const thumb = listingImgs[0] || null;
-
-          // Group messages by date
-          let lastDateLabel = "";
-          return (
-            <div className="detail-panel">
-              {/* Header */}
-              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card, flexShrink: 0 }}>
-                <div onClick={() => { setSelectedChat(null); fetchChats(); }}
-                  style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", flexShrink: 0, fontSize: 18 }}>←</div>
-
-                <Avatar initials={otherInitials} size={40} src={otherProfile?.avatar_url} />
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{otherName}</div>
-                  <div style={{ color: C.muted, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Re: {selectedChat?.listings?.title}</div>
-                </div>
-
-                {/* Listing thumbnail shortcut */}
-                {thumb && (
-                  <div style={{ width: 40, height: 40, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: 0 }}>
-                    <img src={thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  </div>
-                )}
+        {tab === "messages" && selectedChat && (
+          <div className="detail-panel">
+            <div style={{ padding: "14px 20px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, background: C.card }}>
+              <div onClick={() => setSelectedChat(null)} style={{ cursor: "pointer", color: C.accent, fontSize: 22, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%" }}>←</div>
+              <Avatar initials="??" size={38} />
+              <div>
+                <div style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>Chat</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>Re: {selectedChat?.listings?.title}</div>
               </div>
-
-              {/* Safety banner */}
-              <div style={{ padding: "8px 14px", background: `${C.warm}12`, borderBottom: `1px solid ${C.warm}33`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill={C.warm} style={{ flexShrink: 0 }}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-                <span style={{ color: C.warm, fontSize: 11, lineHeight: 1.5 }}>Never share bank details or pay outside UniSwap. Use the <strong>Buy Now</strong> button to transact safely.</span>
-              </div>
-
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 8px" }}>
-                {messages.length === 0 && (
-                  <div style={{ textAlign: "center", color: C.muted, padding: "60px 20px" }}>
-                    <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Start the conversation</div>
-                    <div style={{ fontSize: 13, marginTop: 6 }}>Say hi or ask about the listing!</div>
-                  </div>
-                )}
-                {messages.map((m, idx) => {
-                  const isMe = m.sender_id === user.id;
-                  const isOptimistic = String(m.id).startsWith("opt-");
-                  const msgDate = new Date(m.created_at);
-                  const now = new Date();
-                  const isToday = msgDate.toDateString() === now.toDateString();
-                  const isYesterday = new Date(now - 86400000).toDateString() === msgDate.toDateString();
-                  const dateLabel = isToday ? "Today" : isYesterday ? "Yesterday" : msgDate.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
-                  const showDateLabel = dateLabel !== lastDateLabel;
-                  if (showDateLabel) lastDateLabel = dateLabel;
-
-                  // Show avatar for other person only on last consecutive message
-                  const nextMsg = messages[idx + 1];
-                  const isLastInGroup = !nextMsg || nextMsg.sender_id !== m.sender_id;
-
-                  return (
-                    <div key={m.id}>
-                      {showDateLabel && (
-                        <div style={{ textAlign: "center", margin: "16px 0 12px" }}>
-                          <span style={{ background: C.pill, color: C.muted, fontSize: 11, fontWeight: 600, padding: "4px 14px", borderRadius: 20, letterSpacing: 0.5 }}>{dateLabel}</span>
-                        </div>
-                      )}
-                      <div style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 8, marginBottom: isLastInGroup ? 12 : 3 }}>
-                        {/* Other person's avatar — only on last in group */}
-                        {!isMe && (
-                          <div style={{ width: 28, flexShrink: 0, marginBottom: 2 }}>
-                            {isLastInGroup && <Avatar initials={otherInitials} size={28} src={otherProfile?.avatar_url} />}
-                          </div>
-                        )}
-
-                        <div style={{ maxWidth: "72%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
-                          <div style={{
-                            background: isMe ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill,
-                            color: isMe ? "#000" : C.text,
-                            borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                            padding: "10px 14px",
-                            fontSize: 14,
-                            lineHeight: 1.55,
-                            opacity: isOptimistic ? 0.7 : 1,
-                            transition: "opacity .3s",
-                            boxShadow: isMe ? `0 2px 12px ${C.accent}33` : "none",
-                          }}>
-                            {m.content}
-                          </div>
-                          {isLastInGroup && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-                              <span style={{ fontSize: 10, color: C.muted }}>
-                                {msgDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                              {isMe && (
-                                <span style={{ fontSize: 10, color: isOptimistic ? C.muted : m.is_read ? C.accent : C.muted }}>
-                                  {isOptimistic ? "•" : m.is_read ? "✓✓" : "✓"}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={msgEndRef} />
-              </div>
-
-              {/* Input bar */}
-              <div style={{ padding: "10px 14px 24px", display: "flex", gap: 10, alignItems: "flex-end", borderTop: `1px solid ${C.border}`, background: C.card, flexShrink: 0 }}>
-                <div style={{ flex: 1, background: C.pill, border: `1.5px solid ${msgInput.trim() ? C.accent + "55" : C.border}`, borderRadius: 22, padding: "10px 16px", display: "flex", alignItems: "center", transition: "border .2s", minHeight: 44 }}>
-                  <textarea
-                    value={msgInput}
-                    onChange={e => { setMsgInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px"; }}
-                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                    placeholder="Type a message…"
-                    rows={1}
-                    style={{ flex: 1, background: "transparent", border: "none", color: C.text, fontSize: 14, outline: "none", resize: "none", lineHeight: 1.5, maxHeight: 100, overflow: "auto", fontFamily: "inherit" }}
-                  />
-                </div>
-                <button
-                  onClick={sendMessage}
-                  disabled={!msgInput.trim()}
-                  style={{ background: msgInput.trim() ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.border, border: "none", borderRadius: "50%", width: 44, height: 44, fontSize: 18, cursor: msgInput.trim() ? "pointer" : "default", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: msgInput.trim() ? "#000" : C.muted, transition: "all .2s", transform: msgInput.trim() ? "scale(1)" : "scale(0.9)" }}>
-                  ↑
-                </button>
-              </div>
+              <div style={{ marginLeft: "auto", background: `${C.green}22`, color: C.green, fontSize: 11, padding: "4px 12px", borderRadius: 20, fontWeight: 600 }}>Active</div>
             </div>
-          );
-        })()}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+              {messages.length === 0 && <div style={{ textAlign: "center", color: C.muted, padding: "60px 20px", fontSize: 14 }}>No messages yet. Say hi! 👋</div>}
+              {messages.map(m => {
+                const isMe = m.sender_id === user.id;
+                return (
+                  <div key={m.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom: 12 }}>
+                    <div style={{ maxWidth: "70%", background: isMe ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill, color: isMe ? "#000" : C.text, borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px", padding: "11px 15px", fontSize: 14, lineHeight: 1.5 }}>
+                      <div>{m.content}</div>
+                      <div style={{ fontSize: 10, opacity: 0.6, marginTop: 4, textAlign: "right" }}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={msgEndRef} />
+            </div>
+            <div style={{ padding: "12px 20px 28px", display: "flex", gap: 10, borderTop: `1px solid ${C.border}`, background: C.card }}>
+              <Input style={{ flex: 1 }} placeholder="Type a message…" value={msgInput} onChange={e => setMsgInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} />
+              <button onClick={sendMessage} style={{ background: `linear-gradient(135deg,${C.accent},#0099CC)`, border: "none", borderRadius: 12, width: 48, height: 48, fontSize: 20, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 700 }}>↑</button>
+            </div>
+          </div>
+        )}
 
         {/* ─── SELL ─── */}
         {tab === "sell" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <div className="page-header"><div className="page-title">Sell an Item</div></div>
+            <div className="page-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span onClick={() => { setTab("home"); setSelectedListing(null); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <span style={{ fontSize: 22 }}>🛒</span>
+                  <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</span>
+                </span>
+                <div className="page-title">Sell an Item</div>
+              </div>
+            </div>
             <div className="form-page">
-
               <div style={{ color: C.muted, fontSize: 15, marginBottom: 28 }}>Turn your unused stuff into cash 💰</div>
 
+              {/* Photos */}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ color: C.muted, fontSize: 12, marginBottom: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Photos ({sellPhotos.length}/5)</div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -2419,6 +1746,7 @@ Reason: ${reportReason.trim()}`,
                 <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>First photo is the main thumbnail. Max 5 photos.</div>
               </div>
 
+              {/* Upload progress */}
               {loading && uploadProgress > 0 && uploadProgress < 100 && (
                 <div style={{ marginBottom: 20, padding: 16, background: C.pill, borderRadius: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -2431,25 +1759,15 @@ Reason: ${reportReason.trim()}`,
                 </div>
               )}
 
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Item Name</div>
-                <Input placeholder="e.g. Calculus Textbook" value={sellTitle} onChange={e => setSellTitle(e.target.value)} />
-              </div>
-
+              {/* Two-column on desktop */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Item Name</div>
+                  <Input placeholder="e.g. Calculus Textbook" value={sellTitle} onChange={e => setSellTitle(e.target.value)} />
+                </div>
                 <div>
                   <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Price (₦)</div>
                   <Input type="number" placeholder="e.g. 4500" value={sellPrice} onChange={e => setSellPrice(e.target.value)} />
-                </div>
-                <div>
-                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Quantity</div>
-                  <div style={{ display: "flex", alignItems: "center", background: C.pill, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", height: 48 }}>
-                    <button onClick={() => setSellQty(q => String(Math.max(1, parseInt(q||1) - 1)))}
-                      style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 22, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>−</button>
-                    <div style={{ flex: 1, textAlign: "center", color: C.text, fontSize: 16, fontWeight: 700 }}>{sellQty || 1}</div>
-                    <button onClick={() => setSellQty(q => String(Math.min(99, parseInt(q||1) + 1)))}
-                      style={{ width: 44, height: "100%", background: "transparent", border: "none", color: C.accent, fontSize: 22, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>+</button>
-                  </div>
                 </div>
               </div>
 
@@ -2473,13 +1791,24 @@ Reason: ${reportReason.trim()}`,
         {/* ─── PROFILE ─── */}
         {tab === "profile" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <div className="page-header"><div className="page-title">Account</div></div>
+            <div className="page-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span onClick={() => { setTab("home"); setSelectedListing(null); setProfileTab("menu"); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <span style={{ fontSize: 22 }}>🛒</span>
+                  <span style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</span>
+                </span>
+                <div className="page-title">Account</div>
+              </div>
+            </div>
             <div className="form-page">
 
+              {/* Profile card */}
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24, padding: "28px 24px", marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                  {/* Tappable avatar with camera badge */}
                   <div style={{ position: "relative", cursor: "pointer", flexShrink: 0 }} onClick={() => avatarInputRef.current?.click()}>
                     <Avatar initials={initials} size={72} src={avatarUrl} />
+                    {/* Hover/tap overlay */}
                     <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", opacity: avatarUploading ? 1 : 0, transition: "opacity .2s" }}
                       onMouseEnter={e => e.currentTarget.style.opacity = "1"}
                       onMouseLeave={e => { if (!avatarUploading) e.currentTarget.style.opacity = "0"; }}>
@@ -2488,6 +1817,7 @@ Reason: ${reportReason.trim()}`,
                         : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                       }
                     </div>
+                    {/* Camera badge */}
                     <div style={{ position: "absolute", bottom: 1, right: 1, background: C.accent, borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${C.card}`, pointerEvents: "none" }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                     </div>
@@ -2500,6 +1830,7 @@ Reason: ${reportReason.trim()}`,
                     {avatarUploading && <div style={{ color: C.accent, fontSize: 11, marginTop: 4, fontWeight: 600 }}>Uploading photo…</div>}
                   </div>
                 </div>
+                {/* Stats row */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
                   {[
                     [myListings.filter(l => !l.is_sold).length, "Active"],
@@ -2518,9 +1849,10 @@ Reason: ${reportReason.trim()}`,
                 {profile?.bio && <div style={{ color: C.muted, fontSize: 13, marginTop: 14, lineHeight: 1.6, textAlign: "left" }}>{profile.bio}</div>}
               </div>
 
+              {/* Tab switcher — hidden when in edit mode */}
               {profileTab !== "edit" && (
                 <div style={{ display: "flex", background: C.pill, borderRadius: 14, padding: 4, marginBottom: 20, gap: 4 }}>
-                  {[["menu", "Account"], ["listings", "Listings"], ["reviews", "Reviews"]].map(([id, label]) => (
+                  {[["menu", "⚙️ Account"], ["listings", "📦 Listings"], ["reviews", "⭐ Reviews"]].map(([id, label]) => (
                     <div key={id} onClick={() => { setProfileTab(id); if (id === "reviews") fetchSellerReviews(user.id); }} style={{ flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: profileTab === id ? C.card : "transparent", color: profileTab === id ? C.text : C.muted, border: profileTab === id ? `1px solid ${C.border}` : "1px solid transparent", transition: "all .2s" }}>{label}</div>
                   ))}
                 </div>
@@ -2534,6 +1866,7 @@ Reason: ${reportReason.trim()}`,
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Edit Profile</div>
                   </div>
 
+                  {/* Bio data card */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Full Name</div>
@@ -2558,12 +1891,15 @@ Reason: ${reportReason.trim()}`,
                     </div>
                   </div>
 
+                  {/* Change Password */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 16 }}>
                     <div>
                       <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontWeight: 700, fontSize: 15 }}>🔐 Change Password</div>
                       <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>Leave blank to keep your current password.</div>
                     </div>
                     <div style={{ height: 1, background: C.border }} />
+
+                    {/* Current password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Current Password</div>
                       <div style={{ position: "relative" }}>
@@ -2571,13 +1907,17 @@ Reason: ${reportReason.trim()}`,
                         <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
                       </div>
                     </div>
+
                     <div style={{ height: 1, background: `${C.border}88` }} />
+
+                    {/* New password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>New Password</div>
                       <div style={{ position: "relative" }}>
                         <Input type={showPassword ? "text" : "password"} placeholder="Enter new password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={{ paddingRight: 48 }} />
                         <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
                       </div>
+                      {/* Strength meter */}
                       {newPassword.length > 0 && (
                         <div style={{ marginTop: 8, background: C.pill, borderRadius: 10, padding: "10px 14px" }}>
                           <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
@@ -2591,6 +1931,8 @@ Reason: ${reportReason.trim()}`,
                         </div>
                       )}
                     </div>
+
+                    {/* Confirm password */}
                     <div>
                       <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Confirm New Password</div>
                       <div style={{ position: "relative" }}>
@@ -2609,7 +1951,6 @@ Reason: ${reportReason.trim()}`,
                   <Btn onClick={() => setProfileTab("menu")}>Cancel</Btn>
                 </div>
               )}
-
               {profileTab === "menu" && (
                 <>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", marginBottom: 20 }}>
@@ -2715,10 +2056,13 @@ Reason: ${reportReason.trim()}`,
                     <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 20, fontWeight: 800 }}>Settings</div>
                   </div>
 
+                  {/* ── Notifications ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Notifications</div>
                     </div>
+
+                    {/* Push notifications */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: C.text, fontSize: 15, fontWeight: 500 }}>Push Notifications</div>
@@ -2730,6 +2074,8 @@ Reason: ${reportReason.trim()}`,
                         <div style={{ position: "absolute", top: 3, left: notifEnabled ? 23 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", transition: "left .25s", boxShadow: "0 1px 4px rgba(0,0,0,.3)" }} />
                       </div>
                     </div>
+
+                    {/* Message alerts — own independent toggle */}
                     <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, borderTop: `1px solid ${C.border}22` }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ color: notifEnabled ? C.text : C.muted, fontSize: 15, fontWeight: 500 }}>New Message Alerts</div>
@@ -2743,6 +2089,7 @@ Reason: ${reportReason.trim()}`,
                     </div>
                   </div>
 
+                  {/* ── About ── */}
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}22` }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>About</div>
@@ -2756,10 +2103,13 @@ Reason: ${reportReason.trim()}`,
                     </div>
                   </div>
 
+                  {/* ── Danger Zone ── */}
                   <div style={{ background: C.card, border: `1px solid #FF555533`, borderRadius: 20, overflow: "hidden" }}>
                     <div style={{ padding: "14px 20px", borderBottom: `1px solid #FF555522` }}>
                       <div style={{ color: "#FF5555", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Danger Zone</div>
                     </div>
+
+                    {/* Step 0 — initial delete button */}
                     {deleteConfirmStep === 0 && (
                       <div onClick={() => setDeleteConfirmStep(1)} style={{ padding: "16px 20px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = "#FF555511"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                         <div style={{ flex: 1 }}>
@@ -2769,6 +2119,8 @@ Reason: ${reportReason.trim()}`,
                         <span style={{ color: "#FF5555", fontSize: 18 }}>›</span>
                       </div>
                     )}
+
+                    {/* Step 1 — are you sure? */}
                     {deleteConfirmStep === 1 && (
                       <div style={{ padding: "20px" }}>
                         <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Are you sure?</div>
@@ -2788,6 +2140,8 @@ Reason: ${reportReason.trim()}`,
                         </div>
                       </div>
                     )}
+
+                    {/* Step 2 — type DELETE to confirm */}
                     {deleteConfirmStep === 2 && (
                       <div style={{ padding: "20px" }}>
                         <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Final confirmation</div>
@@ -2825,12 +2179,13 @@ Reason: ${reportReason.trim()}`,
                   </div>
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden" }}>
                     {[
-                      { title: "Report a listing",   sub: "Flag inappropriate or fraudulent content", placeholder: "Which listing? What's the issue?" },
-                      { title: "Account issues",      sub: "Login problems, account recovery",          placeholder: "Describe your account issue…" },
-                      { title: "Transaction dispute", sub: "Issues with a buyer or seller",             placeholder: "Describe the transaction and the problem…" },
-                      { title: "Suggest a feature",  sub: "Help us improve UniSwap",                   placeholder: "What feature would you love to see?" },
+                      { title: "Report a listing",    sub: "Flag inappropriate or fraudulent content",   icon: "🚩", placeholder: "Which listing? What's the issue?" },
+                      { title: "Account issues",       sub: "Login problems, account recovery",            icon: "🔐", placeholder: "Describe your account issue…" },
+                      { title: "Transaction dispute",  sub: "Issues with a buyer or seller",               icon: "⚖️", placeholder: "Describe the transaction and the problem…" },
+                      { title: "Suggest a feature",   sub: "Help us improve UniSwap",                     icon: "💡", placeholder: "What feature would you love to see?" },
                     ].map((topic, i, arr) => (
                       <div key={topic.title} onClick={() => { setSupportTopic(topic); setSupportSubject(topic.title); setSupportMessage(""); }} style={{ padding: "16px 20px", borderBottom: i < arr.length - 1 ? `1px solid ${C.border}22` : "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.pill} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: 22, width: 28 }}>{topic.icon}</span>
                         <div style={{ flex: 1 }}>
                           <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{topic.title}</div>
                           <div style={{ color: C.muted, fontSize: 12, marginTop: 3 }}>{topic.sub}</div>
@@ -2839,6 +2194,7 @@ Reason: ${reportReason.trim()}`,
                       </div>
                     ))}
                   </div>
+                  {/* Contact email */}
                   <div onClick={() => setContactModal(true)} style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: 16, textAlign: "center", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = `${C.accent}18`} onMouseLeave={e => e.currentTarget.style.background = `${C.accent}0D`}>
                     <div style={{ color: C.muted, fontSize: 13 }}>Need urgent help? Email us directly</div>
                     <div style={{ color: C.accent, fontWeight: 700, fontSize: 15, marginTop: 6 }}>support@uniswap.campus →</div>
@@ -2852,12 +2208,13 @@ Reason: ${reportReason.trim()}`,
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
                     <div onClick={() => setSupportTopic(null)} style={{ cursor: "pointer", color: C.accent, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", background: C.pill, borderRadius: "50%", fontSize: 20, flexShrink: 0 }}>←</div>
                     <div>
-                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>{supportTopic.title}</div>
+                      <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 18, fontWeight: 800 }}>{supportTopic.icon} {supportTopic.title}</div>
                       <div style={{ color: C.muted, fontSize: 13 }}>{supportTopic.sub}</div>
                     </div>
                   </div>
 
                   <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: "20px", display: "flex", flexDirection: "column", gap: 14 }}>
+                    {/* Auto-filled user info */}
                     <div style={{ background: C.pill, borderRadius: 12, padding: "12px 14px" }}>
                       <div style={{ color: C.muted, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Submitting as</div>
                       <div style={{ color: C.text, fontSize: 14, fontWeight: 600 }}>{profile?.full_name}</div>
@@ -2882,6 +2239,7 @@ Reason: ${reportReason.trim()}`,
                     {loading ? "Sending…" : "Send Request →"}
                   </button>
 
+                  {/* Also offer email fallback */}
                   <div style={{ textAlign: "center" }}>
                     <span style={{ color: C.muted, fontSize: 13 }}>Or </span>
                     <span onClick={() => setContactModal(true)} style={{ color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>email us directly</span>
@@ -2892,6 +2250,7 @@ Reason: ${reportReason.trim()}`,
               {/* ── MY LISTINGS DASHBOARD ── */}
               {profileTab === "listings" && (
                 <>
+                  {/* Active / Sold tabs */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                     {[["active", `Active (${myListings.filter(l => !l.is_sold).length})`], ["sold", `Sold (${myListings.filter(l => l.is_sold).length})`]].map(([id, label]) => (
                       <Pill key={id} active={myListingsTab === id} onClick={() => setMyListingsTab(id)}>{label}</Pill>
@@ -2917,10 +2276,12 @@ Reason: ${reportReason.trim()}`,
                           const imgs = getImages(l);
                           return (
                             <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", display: "flex", gap: 0 }}>
+                              {/* Thumbnail */}
                               <div style={{ width: 90, flexShrink: 0, background: C.pill, position: "relative" }}>
                                 {imgs[0] ? <img src={imgs[0]} alt={l.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>📦</div>}
                                 {l.is_sold && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: C.green, fontWeight: 800, fontSize: 13, background: `${C.green}22`, border: `1px solid ${C.green}`, borderRadius: 8, padding: "4px 8px" }}>SOLD</div></div>}
                               </div>
+                              {/* Details */}
                               <div style={{ flex: 1, padding: "14px 16px", minWidth: 0 }}>
                                 <div style={{ color: C.text, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</div>
                                 <div style={{ color: C.accent, fontWeight: 800, fontSize: 16, marginTop: 2 }}>₦{l.price?.toLocaleString()}</div>
@@ -2929,10 +2290,11 @@ Reason: ${reportReason.trim()}`,
                                   <span style={{ background: C.pill, color: C.muted, fontSize: 11, padding: "3px 8px", borderRadius: 10 }}>{l.condition}</span>
                                   <span style={{ color: C.muted, fontSize: 11, padding: "3px 0" }}>{new Date(l.created_at).toLocaleDateString()}</span>
                                 </div>
+                                {/* Action buttons */}
                                 {!l.is_sold && (
                                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                                     <div onClick={() => handleMarkSold(l.id)} style={{ background: `${C.green}18`, border: `1px solid ${C.green}44`, color: C.green, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer", whiteSpace: "nowrap" }}>✓ Mark Sold</div>
-                                    <div onClick={() => handleDeleteListing(l.id)} style={{ background: "#FF555518", border: "1px solid #FF555544", color: "#FF5555", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer" }}>Delete</div>
+                                    <div onClick={() => handleDeleteListing(l.id)} style={{ background: "#FF555518", border: "1px solid #FF555544", color: "#FF5555", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, cursor: "pointer" }}>🗑 Delete</div>
                                   </div>
                                 )}
                               </div>
@@ -2956,6 +2318,7 @@ Reason: ${reportReason.trim()}`,
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {/* Average summary */}
                       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: "20px", textAlign: "center", marginBottom: 4 }}>
                         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 48, fontWeight: 800, color: "#FFD700" }}>
                           {(sellerReviews.reduce((s, r) => s + r.rating, 0) / sellerReviews.length).toFixed(1)}
@@ -3009,14 +2372,7 @@ Reason: ${reportReason.trim()}`,
       <nav className="bottom-nav">
         {NAV_ITEMS.map(({ id, icon, label }) => (
           <div key={id} className="bottom-nav-item" onClick={() => handleTabChange(id)}>
-            <div style={{ position: "relative", display: "inline-flex" }}>
-              <div style={{ fontSize: 24, filter: tab === id ? "none" : "grayscale(1) opacity(.4)", transform: tab === id ? "scale(1.1)" : "scale(1)", transition: "all .2s" }}>{icon}</div>
-              {id === "messages" && unreadCount > 0 && (
-                <div style={{ position: "absolute", top: -4, right: -6, background: "#FF5555", color: "#fff", borderRadius: "50%", minWidth: 16, height: 16, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", border: `2px solid ${C.sidebar}` }}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </div>
-              )}
-            </div>
+            <div style={{ fontSize: 24, filter: tab === id ? "none" : "grayscale(1) opacity(.4)", transform: tab === id ? "scale(1.1)" : "scale(1)", transition: "all .2s" }}>{icon}</div>
             <div style={{ fontSize: 10, color: tab === id ? C.accent : C.muted, fontWeight: tab === id ? 700 : 400 }}>{label}</div>
             {tab === id && <div style={{ width: 4, height: 4, borderRadius: "50%", background: C.accent }} />}
           </div>
