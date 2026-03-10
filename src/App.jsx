@@ -1271,20 +1271,41 @@ Reason: ${reportReason.trim()}`,
   };
 
   const handleDealPaid = async () => {
-    // Step 3 — buyer marks as paid, notifies seller via message
     setDealStep(3);
     const sellerId = dealModal.seller_id;
+    const listingId = dealModal.id;
     const totalPrice = dealModal.price * dealQty;
-    const safetyMsg = `🔒 ESCROW DEAL INITIATED\n\nItem: ${dealModal.title}\nQty: ${dealQty}\nTotal: ₦${totalPrice.toLocaleString()}\n\nThe buyer has marked this as paid. Please confirm delivery to release the deal. Do NOT accept outside-app payments.`;
+
     try {
+      // 1️⃣ Mark listing as sold in DB
+      await supabase
+        .from("listings")
+        .update({ is_sold: true })
+        .eq("id", listingId);
+
+      // 2️⃣ Sync all local state so UI updates immediately everywhere
+      // — Remove from home feed
+      setListings(prev => prev.filter(l => l.id !== listingId));
+      // — Update seller's "My Listings" tab
+      setMyListings(prev =>
+        prev.map(l => l.id === listingId ? { ...l, is_sold: true } : l)
+      );
+      // — Update selected listing card so detail page reflects sold status
+      setSelectedListing(prev =>
+        prev?.id === listingId ? { ...prev, is_sold: true } : prev
+      );
+
+      // 3️⃣ Notify seller via in-app message
+      const safetyMsg = `🔒 PAYMENT CONFIRMED\n\nItem: ${dealModal.title}\nQty: ${dealQty}\nTotal: ₦${totalPrice.toLocaleString()}\n\nThe buyer has confirmed payment. This listing has been automatically marked as SOLD. Arrange delivery/pickup in this chat.`;
       await supabase.from("messages").insert({
         sender_id: user.id,
         receiver_id: sellerId,
-        listing_id: dealModal.id,
+        listing_id: listingId,
         content: safetyMsg,
         is_read: false,
       });
-    } catch { /* silent */ }
+    } catch { /* silent — sold state still updates locally */ }
+
     setDealStep(4);
   };
 
@@ -1394,13 +1415,16 @@ Reason: ${reportReason.trim()}`,
           {dealStep === 4 && (
             <div style={{ textAlign: "center" }}>
               <div style={{ width: 68, height: 68, borderRadius: "50%", background: `${C.green}22`, border: `2px solid ${C.green}55`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 32 }}>✓</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Deal Initiated!</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Payment Confirmed!</div>
+              <div style={{ background: `${C.green}22`, border: `1px solid ${C.green}55`, borderRadius: 20, padding: "4px 14px", display: "inline-block", marginBottom: 14 }}>
+                <span style={{ color: C.green, fontSize: 12, fontWeight: 800 }}>✓ Listing automatically marked as SOLD</span>
+              </div>
               <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 }}>
-                <strong style={{ color: C.text }}>{sellerName}</strong> has been notified. Go to Messages to share payment details and arrange pickup.
+                <strong style={{ color: C.text }}>{sellerName}</strong> has been notified and this listing has been removed from the marketplace. Go to Messages to arrange delivery or pickup.
               </div>
               <div style={{ background: `${C.green}0D`, border: `1px solid ${C.green}22`, borderRadius: 14, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
-                {["Seller notified via in-app message", "Share bank details securely in chat", "Rate the seller after deal closes"].map((tip, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: i < 2 ? 8 : 0 }}>
+                {["Listing auto-marked as sold", "Seller notified via in-app message", "Arrange delivery/pickup in chat", "Rate the seller after deal closes"].map((tip, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: i < 3 ? 8 : 0 }}>
                     <div style={{ width: 18, height: 18, borderRadius: "50%", background: `${C.green}33`, color: C.green, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✓</div>
                     <span style={{ color: C.muted, fontSize: 13 }}>{tip}</span>
                   </div>
@@ -3000,4 +3024,4 @@ Reason: ${reportReason.trim()}`,
       </nav>
     </div>
   );
-                   }
+}
