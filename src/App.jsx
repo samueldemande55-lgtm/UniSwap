@@ -490,13 +490,7 @@ export default function UniSwap() {
         setAuthReady(true);
         return;
       }
-      // While user is mid-signup OTP step, block ALL session events —
-      // signUp() on some Supabase configs fires SIGNED_IN before email confirmation.
-      if (signupStepRef.current === "otp") {
-        // Sign out the premature session silently so user stays on OTP screen
-        if (session?.user) supabase.auth.signOut().catch(() => {});
-        return;
-      }
+      // OTP step removed — signUp goes straight to session
       if (session?.user) { setUser(session.user); fetchProfile(session.user.id); }
       else { setUser(null); setProfile(null); }
     });
@@ -511,24 +505,18 @@ export default function UniSwap() {
     } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
   };
 
-  // Step 1 — validate form, register account (Supabase sends OTP automatically)
+  // Step 1 — validate + register. Email confirmation is disabled in Supabase dashboard,
+  // so signUp() creates the account and logs the user in immediately with no email step.
   const handleSendOtp = async () => {
     if (!fullName || !email || !password || !matric) return showToast("Please fill all fields", "error");
     if (!email.includes("@")) return showToast("Please enter a valid email", "error");
     if (!isAllowedEmail(email)) return showToast("Please use Gmail, Outlook, Yahoo, iCloud or similar", "error");
     if (password.length < 8) return showToast("Password must be at least 8 characters", "error");
     if (!acceptedTerms) return showToast("Please accept Terms & Privacy Policy", "error");
-    setOtpSending(true);
+    setLoading(true);
     try {
-      // signUp() registers the account AND sends the 6-digit OTP to the email.
-      // The session is NOT created yet — user stays null until verifyOtp succeeds.
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { full_name: fullName, matric_number: matric },
-          emailRedirectTo: window.location.origin, // fallback if link is sent instead of OTP
-        },
+      const { data, error } = await supabase.auth.signUp({ email, password,
+        options: { data: { full_name: fullName, matric_number: matric } },
       });
       if (error) {
         const msg = error.message?.toLowerCase() || "";
@@ -543,18 +531,17 @@ export default function UniSwap() {
         }
         return;
       }
-      // Move to OTP step — guard ref so onAuthStateChange ignores any premature session
-      signupStepRef.current = "otp";
-      setSignupStep("otp");
-      setOtpCode("");
-      setOtpResendTimer(60);
-      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
-      otpTimerRef.current = setInterval(() => {
-        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
-      }, 1000);
-      showToast("OTP sent! Check your inbox.");
+      if (data?.user) {
+        // Insert profile row immediately
+        await supabase.from("profiles")
+          .upsert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 })
+          .catch(() => {});
+        setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
+        // onAuthStateChange will set user and open the app automatically
+        showToast("Account created! Welcome to UniSwap 🎉");
+      }
     } catch { showToast("Connection error. Try again.", "error"); }
-    finally { setOtpSending(false); }
+    finally { setLoading(false); }
   };
 
   // Step 2 — verify the 6-digit OTP Supabase emailed after signUp()
@@ -1428,7 +1415,7 @@ export default function UniSwap() {
               </label>
 
               <Btn primary onClick={handleSendOtp} style={{ opacity: acceptedTerms && isAllowedEmail(email) ? 1 : 0.5 }}>
-                {otpSending ? "Sending OTP…" : "Continue →"}
+                {loading ? "Creating account…" : "Join UniSwap 🚀"}
               </Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
             </div>
