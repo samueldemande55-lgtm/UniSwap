@@ -7,6 +7,22 @@ const supabase = createClient(
 );
 
 const C = { bg: "#0A0E1A", card: "#111827", border: "#1E2A3A", accent: "#00D4FF", warm: "#FF6B35", green: "#00E676", text: "#F0F4FF", muted: "#6B7FA3", pill: "#1A2540", sidebar: "#0D1421" };
+// ── Allowed email domains ──────────────────────────────────────────────────
+const ALLOWED_EMAIL_DOMAINS = [
+  "gmail.com",
+  "outlook.com","hotmail.com","live.com","msn.com","hotmail.co.uk","live.co.uk",
+  "yahoo.com","yahoo.co.uk","yahoo.com.ng","ymail.com",
+  "icloud.com","me.com","mac.com",
+  "protonmail.com","proton.me","pm.me",
+  "zoho.com","aol.com","mail.com","gmx.com","gmx.net","tutanota.com",
+  "edu","edu.ng",
+];
+const isAllowedEmail = (email) => {
+  if (!email || !email.includes("@")) return false;
+  const domain = email.split("@")[1]?.toLowerCase() || "";
+  return ALLOWED_EMAIL_DOMAINS.some(d => domain === d || domain.endsWith("." + d));
+};
+
 const CATEGORIES = ["All","Books","Electronics","Appliances","Furniture","Tools","Music","Accessories"];
 
 const getImages = (listing) => {
@@ -440,6 +456,12 @@ export default function UniSwap() {
   const [sellPhotos, setSellPhotos]     = useState([]);
   const [sellPreviews, setSellPreviews] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [signupStep, setSignupStep]             = useState("form"); // "form" | "otp"
+  const signupStepRef                           = useRef("form"); // mirrors signupStep for closure access
+  const [otpCode, setOtpCode]                   = useState("");
+  const [otpSending, setOtpSending]             = useState(false);
+  const [otpResendTimer, setOtpResendTimer]     = useState(0);
+  const otpTimerRef                             = useRef(null);
 
   // ── Deal / Escrow state ──
   const [dealModal, setDealModal]               = useState(null);   // listing being purchased
@@ -467,6 +489,9 @@ export default function UniSwap() {
         setAuthReady(true);
         return;
       }
+      // While user is on the OTP verification step, ignore SIGNED_IN events —
+      // verifyOtp triggers a session but we want to finish the signup flow first.
+      if (_e === "SIGNED_IN" && signupStepRef.current === "otp") return;
       if (session?.user) { setUser(session.user); fetchProfile(session.user.id); }
       else { setUser(null); setProfile(null); }
     });
@@ -481,21 +506,83 @@ export default function UniSwap() {
     } catch { setProfile({ full_name: "User", email: "", matric_number: "", rating: 0 }); }
   };
 
-  const handleSignUp = async () => {
+  // Step 1 — validate form, register account (Supabase sends OTP automatically)
+  const handleSendOtp = async () => {
     if (!fullName || !email || !password || !matric) return showToast("Please fill all fields", "error");
     if (!email.includes("@")) return showToast("Please enter a valid email", "error");
+    if (!isAllowedEmail(email)) return showToast("Please use Gmail, Outlook, Yahoo, iCloud or similar", "error");
+    if (password.length < 8) return showToast("Password must be at least 8 characters", "error");
     if (!acceptedTerms) return showToast("Please accept Terms & Privacy Policy", "error");
+    setOtpSending(true);
+    try {
+      // signUp() registers the account AND sends the 6-digit OTP to the email.
+      // The session is NOT created yet — user stays null until verifyOtp succeeds.
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName, matric_number: matric } },
+      });
+      if (error) { showToast(error.message, "error"); return; }
+      // Move to OTP step — guard ref so onAuthStateChange ignores any premature session
+      signupStepRef.current = "otp";
+      setSignupStep("otp");
+      setOtpCode("");
+      setOtpResendTimer(60);
+      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+      otpTimerRef.current = setInterval(() => {
+        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
+      }, 1000);
+      showToast("OTP sent! Check your inbox.");
+    } catch { showToast("Connection error. Try again.", "error"); }
+    finally { setOtpSending(false); }
+  };
+
+  // Step 2 — verify the 6-digit OTP Supabase emailed after signUp()
+  const handleVerifyOtp = async () => {
+    if (otpCode.length < 6) return showToast("Enter the 6-digit code", "error");
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) { showToast(error.message, "error"); return; }
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: otpCode,
+        type: "signup",   // must match the signUp() flow
+      });
+      if (error) { showToast("Invalid or expired code. Try again.", "error"); return; }
       if (data?.user) {
-        await supabase.from("profiles").insert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 });
+        // Insert/upsert profile row
+        await supabase.from("profiles")
+          .upsert({ id: data.user.id, full_name: fullName, email, matric_number: matric, rating: 0 })
+          .catch(() => {});
+        // Clear OTP guard and update state — now allow the auth wall to open
+        signupStepRef.current = "form";
+        setSignupStep("form");
+        setOtpCode("");
         setProfile({ full_name: fullName, email, matric_number: matric, rating: 0 });
-        showToast("Account created! Welcome 🎉");
+        setUser(data.user);   // manually set — triggers re-render into main app
+        showToast("Account verified! Welcome to UniSwap 🎉");
       }
     } catch { showToast("Connection error. Try again.", "error"); }
     finally { setLoading(false); }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpResendTimer > 0) return;
+    setOtpSending(true);
+    try {
+      // Re-trigger the signup OTP email
+      const { error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { full_name: fullName, matric_number: matric } },
+      });
+      if (error) { showToast(error.message, "error"); return; }
+      setOtpResendTimer(60);
+      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+      otpTimerRef.current = setInterval(() => {
+        setOtpResendTimer(t => { if (t <= 1) { clearInterval(otpTimerRef.current); return 0; } return t - 1; });
+      }, 1000);
+      showToast("New OTP sent!");
+    } catch { showToast("Failed to resend. Try again.", "error"); }
+    finally { setOtpSending(false); }
   };
 
   const handleLogin = async () => {
@@ -1095,29 +1182,130 @@ export default function UniSwap() {
             </div>
           )}
 
-          {authScreen === "signup" && (
+          {/* ── Step 1: Fill details ── */}
+          {authScreen === "signup" && signupStep === "form" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
-              <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
-              <Input placeholder="School email (.edu.ng)" value={email} onChange={e => setEmail(e.target.value)} />
-              <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
-              <div style={{ position: "relative" }}>
-                <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
-                <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+              <div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Create account</div>
+                <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Step 1 of 2 — Your details</div>
               </div>
+
+              <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
+
+              <div>
+                <Input
+                  placeholder="Email (Gmail, Outlook, Yahoo…)"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  style={{ borderColor: email && email.includes("@") && !isAllowedEmail(email) ? "#FF5555" : email && isAllowedEmail(email) ? C.green : undefined }}
+                />
+                {email && email.includes("@") && !isAllowedEmail(email) && (
+                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                    Use Gmail, Outlook, Yahoo, iCloud or similar
+                  </div>
+                )}
+                {email && isAllowedEmail(email) && (
+                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                    Valid email
+                  </div>
+                )}
+              </div>
+
+              <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
+
+              <div>
+                <div style={{ position: "relative" }}>
+                  <Input type={showPassword ? "text" : "password"} placeholder="Create password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                  <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
+                </div>
+                {password && password.length < 8 && (
+                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                    At least 8 characters required
+                  </div>
+                )}
+              </div>
+
               <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
                 <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .2s" }}>
                   {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
                 </div>
                 <span style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
               </label>
-              <Btn primary onClick={handleSignUp} style={{ opacity: acceptedTerms ? 1 : 0.5 }}>{loading ? "Creating…" : "Join UniSwap 🚀"}</Btn>
+
+              <Btn primary onClick={handleSendOtp} style={{ opacity: acceptedTerms && isAllowedEmail(email) ? 1 : 0.5 }}>
+                {otpSending ? "Sending OTP…" : "Continue →"}
+              </Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
             </div>
           )}
 
+          {/* ── Step 2: OTP verification ── */}
+          {authScreen === "signup" && signupStep === "otp" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Verify your email</div>
+                <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Step 2 of 2 — Email verification</div>
+              </div>
+
+              {/* Email badge */}
+              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <div>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>Code sent to</div>
+                  <div style={{ color: C.accent, fontSize: 13, marginTop: 2, wordBreak: "break-all" }}>{email}</div>
+                </div>
+              </div>
+
+              <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
+                Enter the <strong style={{ color: C.text }}>6-digit code</strong> from your inbox. Check your spam folder if needed.
+              </div>
+
+              {/* OTP input */}
+              <div>
+                <Input
+                  placeholder="000000"
+                  value={otpCode}
+                  onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  style={{ textAlign: "center", letterSpacing: 12, fontSize: 24, fontWeight: 800, borderColor: otpCode.length === 6 ? C.green : undefined }}
+                  maxLength={6}
+                />
+                {otpCode.length === 6 && (
+                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                    Code complete — tap verify
+                  </div>
+                )}
+              </div>
+
+              <Btn primary onClick={handleVerifyOtp} style={{ opacity: otpCode.length === 6 ? 1 : 0.5 }}>
+                {loading ? "Verifying…" : "Verify & Create Account 🎉"}
+              </Btn>
+
+              {/* Resend */}
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 13 }}>
+                Didn't receive it?{" "}
+                {otpResendTimer > 0
+                  ? <span style={{ color: C.muted }}>Resend in {otpResendTimer}s</span>
+                  : <span onClick={handleResendOtp} style={{ color: C.accent, fontWeight: 600, cursor: "pointer" }}>{otpSending ? "Sending…" : "Resend OTP"}</span>
+                }
+              </div>
+
+              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => { setSignupStep("form"); setOtpCode(""); }}>
+                ← Change email
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 24, padding: 12, background: `${C.accent}0D`, borderRadius: 12, border: `1px solid ${C.accent}1A`, textAlign: "center" }}>
-            <div style={{ fontSize: 12, color: C.muted }}>🔒 Only verified campus emails allowed</div>
+            <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill={C.accent}><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+              Email verified sign-ups only — your account is protected
+            </div>
           </div>
         </div>
       </div>
