@@ -303,6 +303,7 @@ const GLOBAL_CSS = `
   html, body, #root { height: 100%; background: ${C.bg}; }
   body { font-family: 'DM Sans', sans-serif; color: ${C.text}; -webkit-font-smoothing: antialiased; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -520,9 +521,19 @@ export default function UniSwap() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName, matric_number: matric } },
+        options: {
+          data: { full_name: fullName, matric_number: matric },
+          emailRedirectTo: window.location.origin, // fallback if link is sent instead of OTP
+        },
       });
-      if (error) { showToast(error.message, "error"); return; }
+      if (error) {
+        if (error.message?.toLowerCase().includes("already registered")) {
+          showToast("Email already registered. Try logging in instead.", "error");
+        } else {
+          showToast(error.message, "error");
+        }
+        return;
+      }
       // Move to OTP step — guard ref so onAuthStateChange ignores any premature session
       signupStepRef.current = "otp";
       setSignupStep("otp");
@@ -572,7 +583,10 @@ export default function UniSwap() {
       // Re-trigger the signup OTP email
       const { error } = await supabase.auth.signUp({
         email, password,
-        options: { data: { full_name: fullName, matric_number: matric } },
+        options: {
+          data: { full_name: fullName, matric_number: matric },
+          emailRedirectTo: window.location.origin,
+        },
       });
       if (error) { showToast(error.message, "error"); return; }
       setOtpResendTimer(60);
@@ -1081,6 +1095,173 @@ export default function UniSwap() {
     </div>
   );
 
+  // ── OTP Verification — full-page screen shown after "Continue" on signup ──
+  if (!user && authScreen === "signup" && signupStep === "otp") return (
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <style>{GLOBAL_CSS}</style>
+      <style>{`
+        @media (min-width: 640px) {
+          .otp-inner { padding: 48px 48px !important; }
+          .otp-code-input { font-size: 32px !important; letter-spacing: 20px !important; }
+        }
+        @media (min-width: 900px) {
+          .otp-page { flex-direction: row !important; }
+          .otp-side-panel { display: flex !important; }
+        }
+      `}</style>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+      <Toast {...toast} />
+
+      <div className="otp-page" style={{ display: "flex", flex: 1, minHeight: "100vh" }}>
+
+        {/* ── Left decorative panel — visible on desktop ── */}
+        <div className="otp-side-panel" style={{ display: "none", width: 420, background: `linear-gradient(160deg,${C.sidebar},${C.card})`, borderRight: `1px solid ${C.border}`, flexDirection: "column", justifyContent: "center", alignItems: "center", padding: 48, flexShrink: 0, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: `${C.accent}08`, top: -100, left: -100 }} />
+          <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: `${C.warm}08`, bottom: -60, right: -60 }} />
+          <div style={{ position: "relative", zIndex: 1, textAlign: "center", maxWidth: 340 }}>
+            {/* Animated envelope */}
+            <div style={{ width: 120, height: 120, borderRadius: 32, background: `linear-gradient(135deg,${C.accent}22,${C.warm}22)`, border: `2px solid ${C.accent}33`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 28px" }}>
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+            </div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 28, fontWeight: 800, color: C.text, marginBottom: 12 }}>Check your inbox</div>
+            <div style={{ color: C.muted, fontSize: 15, lineHeight: 1.8, marginBottom: 32 }}>We sent a 6-digit verification code to your email. It expires in 10 minutes.</div>
+            {[
+              ["🔒", "Your code is one-time use only"],
+              ["📬", "Check spam if it doesn't arrive"],
+              ["⏱️", "Code expires in 10 minutes"],
+            ].map(([icon, text]) => (
+              <div key={text} style={{ display: "flex", alignItems: "center", gap: 12, background: `${C.accent}0D`, border: `1px solid ${C.accent}1A`, borderRadius: 12, padding: "12px 16px", marginBottom: 10, textAlign: "left" }}>
+                <span style={{ fontSize: 20 }}>{icon}</span>
+                <span style={{ color: C.text, fontSize: 14 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Right: OTP form ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0", minHeight: "100vh", background: C.bg }}>
+
+          {/* Mobile top bar */}
+          <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 0", boxSizing: "border-box" }} className="otp-mobile-topbar">
+            <style>{`@media(min-width:900px){.otp-mobile-topbar{display:none!important}}`}</style>
+            <button onClick={() => { setSignupStep("form"); signupStepRef.current = "form"; setOtpCode(""); }}
+              style={{ background: "transparent", border: "none", color: C.muted, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              Back
+            </button>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 16, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
+            <div style={{ width: 60 }} />
+          </div>
+
+          {/* Card */}
+          <div className="otp-inner" style={{ width: "100%", maxWidth: 480, padding: "32px 24px", boxSizing: "border-box" }}>
+
+            {/* Icon */}
+            <div style={{ width: 72, height: 72, borderRadius: 22, background: `linear-gradient(135deg,${C.accent}22,${C.warm}22)`, border: `1.5px solid ${C.accent}33`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+            </div>
+
+            <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 28, fontWeight: 800, marginBottom: 6, lineHeight: 1.2 }}>Verify your email</div>
+            <div style={{ color: C.muted, fontSize: 14, marginBottom: 28, lineHeight: 1.6 }}>
+              Enter the 6-digit code sent to{" "}
+              <span style={{ color: C.accent, fontWeight: 600, wordBreak: "break-all" }}>{email}</span>
+            </div>
+
+            {/* 6-box OTP input */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 12 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} style={{
+                    width: "calc((100% - 50px) / 6)",
+                    maxWidth: 56,
+                    aspectRatio: "1",
+                    borderRadius: 14,
+                    background: C.pill,
+                    border: `2px solid ${otpCode[i] ? C.accent : otpCode.length === i ? C.accent + "88" : C.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontFamily: "'Syne',sans-serif",
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: C.text,
+                    transition: "border-color .15s",
+                    position: "relative",
+                  }}>
+                    {otpCode[i] || ""}
+                    {otpCode.length === i && <div style={{ position: "absolute", width: 2, height: "40%", background: C.accent, animation: "blink 1s step-end infinite" }} />}
+                  </div>
+                ))}
+              </div>
+              {/* Hidden real input overlaid */}
+              <input
+                autoFocus
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
+              />
+              {/* Tap-to-type target */}
+              <div
+                onClick={() => document.querySelector('input[inputMode="numeric"]')?.focus()}
+                style={{ width: "100%", height: 48, cursor: "text", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                {otpCode.length === 6
+                  ? <span style={{ color: C.green, fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                      Code complete
+                    </span>
+                  : <span style={{ color: C.muted, fontSize: 13 }}>Tap here and type your code</span>
+                }
+              </div>
+            </div>
+
+            {/* Verify button */}
+            <button
+              onClick={handleVerifyOtp}
+              disabled={otpCode.length < 6 || loading}
+              style={{ width: "100%", height: 52, borderRadius: 16, background: otpCode.length === 6 ? `linear-gradient(135deg,${C.accent},#0099CC)` : C.pill, border: `1.5px solid ${otpCode.length === 6 ? "transparent" : C.border}`, color: otpCode.length === 6 ? "#000" : C.muted, fontWeight: 800, fontSize: 16, cursor: otpCode.length === 6 ? "pointer" : "default", transition: "all .2s", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              {loading
+                ? <><div style={{ width: 18, height: 18, border: `2.5px solid #00000033`, borderTop: "2.5px solid #000", borderRadius: "50%", animation: "spin .7s linear infinite" }} /> Verifying…</>
+                : "Verify & Create Account 🎉"
+              }
+            </button>
+
+            {/* Resend row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+              <span style={{ color: C.muted, fontSize: 14 }}>Didn't get a code?</span>
+              {otpResendTimer > 0
+                ? <span style={{ color: C.muted, fontSize: 14, fontWeight: 600 }}>Resend in {otpResendTimer}s</span>
+                : <span onClick={handleResendOtp} style={{ color: C.accent, fontSize: 14, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                    {otpSending ? "Sending…" : "Resend code"}
+                  </span>
+              }
+            </div>
+
+            {/* Change email link */}
+            <div style={{ textAlign: "center" }}>
+              <span onClick={() => { setSignupStep("form"); signupStepRef.current = "form"; setOtpCode(""); }}
+                style={{ color: C.muted, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Change email address
+              </span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Auth screens ───────────────────────────────────────────────────────────
   if (!user) return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex" }}>
@@ -1239,65 +1420,6 @@ export default function UniSwap() {
                 {otpSending ? "Sending OTP…" : "Continue →"}
               </Btn>
               <div style={{ textAlign: "center", color: C.muted, fontSize: 14, cursor: "pointer" }} onClick={() => { setAuthScreen("login"); setLoginStep("email"); }}>← Back to login</div>
-            </div>
-          )}
-
-          {/* ── Step 2: OTP verification ── */}
-          {authScreen === "signup" && signupStep === "otp" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <div style={{ fontFamily: "'Syne',sans-serif", color: C.text, fontSize: 22, fontWeight: 800 }}>Verify your email</div>
-                <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Step 2 of 2 — Email verification</div>
-              </div>
-
-              {/* Email badge */}
-              <div style={{ background: `${C.accent}0D`, border: `1px solid ${C.accent}22`, borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: "50%", background: `${C.accent}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                </div>
-                <div>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>Code sent to</div>
-                  <div style={{ color: C.accent, fontSize: 13, marginTop: 2, wordBreak: "break-all" }}>{email}</div>
-                </div>
-              </div>
-
-              <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>
-                Enter the <strong style={{ color: C.text }}>6-digit code</strong> from your inbox. Check your spam folder if needed.
-              </div>
-
-              {/* OTP input */}
-              <div>
-                <Input
-                  placeholder="000000"
-                  value={otpCode}
-                  onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  style={{ textAlign: "center", letterSpacing: 12, fontSize: 24, fontWeight: 800, borderColor: otpCode.length === 6 ? C.green : undefined }}
-                  maxLength={6}
-                />
-                {otpCode.length === 6 && (
-                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
-                    Code complete — tap verify
-                  </div>
-                )}
-              </div>
-
-              <Btn primary onClick={handleVerifyOtp} style={{ opacity: otpCode.length === 6 ? 1 : 0.5 }}>
-                {loading ? "Verifying…" : "Verify & Create Account 🎉"}
-              </Btn>
-
-              {/* Resend */}
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13 }}>
-                Didn't receive it?{" "}
-                {otpResendTimer > 0
-                  ? <span style={{ color: C.muted }}>Resend in {otpResendTimer}s</span>
-                  : <span onClick={handleResendOtp} style={{ color: C.accent, fontWeight: 600, cursor: "pointer" }}>{otpSending ? "Sending…" : "Resend OTP"}</span>
-                }
-              </div>
-
-              <div style={{ textAlign: "center", color: C.muted, fontSize: 13, cursor: "pointer" }} onClick={() => { setSignupStep("form"); setOtpCode(""); }}>
-                ← Change email
-              </div>
             </div>
           )}
 
