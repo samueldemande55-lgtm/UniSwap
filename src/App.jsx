@@ -490,9 +490,13 @@ export default function UniSwap() {
         setAuthReady(true);
         return;
       }
-      // While user is on the OTP verification step, ignore SIGNED_IN events —
-      // verifyOtp triggers a session but we want to finish the signup flow first.
-      if (_e === "SIGNED_IN" && signupStepRef.current === "otp") return;
+      // While user is mid-signup OTP step, block ALL session events —
+      // signUp() on some Supabase configs fires SIGNED_IN before email confirmation.
+      if (signupStepRef.current === "otp") {
+        // Sign out the premature session silently so user stays on OTP screen
+        if (session?.user) supabase.auth.signOut().catch(() => {});
+        return;
+      }
       if (session?.user) { setUser(session.user); fetchProfile(session.user.id); }
       else { setUser(null); setProfile(null); }
     });
@@ -527,8 +531,13 @@ export default function UniSwap() {
         },
       });
       if (error) {
-        if (error.message?.toLowerCase().includes("already registered")) {
+        const msg = error.message?.toLowerCase() || "";
+        if (msg.includes("already registered") || msg.includes("user already registered")) {
           showToast("Email already registered. Try logging in instead.", "error");
+        } else if (msg.includes("rate limit") || msg.includes("email rate") || msg.includes("too many")) {
+          showToast("Too many attempts. Please wait a few minutes and try again.", "error");
+        } else if (msg.includes("invalid email") || msg.includes("unable to validate")) {
+          showToast("That email address isn't valid. Please check and try again.", "error");
         } else {
           showToast(error.message, "error");
         }
@@ -1084,19 +1093,10 @@ export default function UniSwap() {
 
   const initials = profile?.full_name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
-  // ── Loading splash ─────────────────────────────────────────────────────────
-  if (!authReady) return (
-    <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 24 }}>
-      <style>{GLOBAL_CSS}</style>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 56 }}>🛒</div>
-      <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
-      <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-    </div>
-  );
-
   // ── OTP Verification — full-page screen shown after "Continue" on signup ──
-  if (!user && authScreen === "signup" && signupStep === "otp") return (
+  // NOTE: No !user guard — signUp() may pre-create a session on some Supabase configs.
+  // signupStep === "otp" is the sole gate; signupStepRef prevents onAuthStateChange from clearing it.
+  if (signupStep === "otp") return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <style>{GLOBAL_CSS}</style>
       <style>{`
@@ -1259,6 +1259,17 @@ export default function UniSwap() {
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  // ── Loading splash ─────────────────────────────────────────────────────────
+  if (!authReady) return (
+    <div style={{ background: C.bg, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 24 }}>
+      <style>{GLOBAL_CSS}</style>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+      <div style={{ fontSize: 56 }}>🛒</div>
+      <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 32, fontWeight: 800, background: `linear-gradient(135deg,${C.accent},${C.warm})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>UniSwap</div>
+      <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
 
