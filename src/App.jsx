@@ -36,6 +36,13 @@ const getImages = (listing) => {
 };
 
 // ── Shared UI components ─────────────────────────────────────────────────────
+const FieldError = ({ msg }) => (
+  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 5 }}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555" style={{ flexShrink: 0 }}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+    <span>{msg}</span>
+  </div>
+);
+
 const Pill = ({ children, active, color = C.accent, onClick }) => (
   <div onClick={onClick} style={{ background: active ? color : C.pill, color: active ? "#000" : C.muted, border: `1px solid ${active ? color : C.border}`, borderRadius: 20, padding: "7px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", transition: "all .2s" }}>{children}</div>
 );
@@ -458,6 +465,7 @@ export default function UniSwap() {
   const [sellPreviews, setSellPreviews] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [signupStep, setSignupStep]             = useState("form"); // "form" | "otp"
+  const [formErrors, setFormErrors]             = useState({});  // field-level signup errors
   const signupStepRef                           = useRef("form"); // mirrors signupStep for closure access
   const [otpCode, setOtpCode]                   = useState("");
   const [otpSending, setOtpSending]             = useState(false);
@@ -508,11 +516,22 @@ export default function UniSwap() {
   // Step 1 — validate + register. Email confirmation is disabled in Supabase dashboard,
   // so signUp() creates the account and logs the user in immediately with no email step.
   const handleSendOtp = async () => {
-    if (!fullName || !email || !password || !matric) return showToast("Please fill all fields", "error");
-    if (!email.includes("@")) return showToast("Please enter a valid email", "error");
-    if (!isAllowedEmail(email)) return showToast("Please use Gmail, Outlook, Yahoo, iCloud or similar", "error");
-    if (password.length < 8) return showToast("Password must be at least 8 characters", "error");
-    if (!acceptedTerms) return showToast("Please accept Terms & Privacy Policy", "error");
+    // Validate all fields and collect errors — show inline, not as toasts
+    const errs = {};
+    if (!fullName.trim())              errs.fullName = "Full name is required";
+    if (!email.trim())                 errs.email = "Email is required";
+    else if (!email.includes("@"))     errs.email = "Enter a valid email address";
+    else if (!isAllowedEmail(email))   errs.email = "Use Gmail, Outlook, Yahoo, iCloud or similar";
+    if (!matric.trim())                errs.matric = "Matric number is required";
+    if (!password)                     errs.password = "Password is required";
+    else if (password.length < 8)      errs.password = "At least 8 characters required";
+    else if (!/[A-Z]/.test(password))  errs.password = "Add at least one uppercase letter (A–Z)";
+    else if (!/[a-z]/.test(password))  errs.password = "Add at least one lowercase letter (a–z)";
+    else if (!/[0-9]/.test(password))  errs.password = "Add at least one number (0–9)";
+    else if (!/[^A-Za-z0-9]/.test(password)) errs.password = "Add at least one special character (!@#$…)";
+    if (!acceptedTerms)                errs.terms = "You must accept the Terms & Privacy Policy";
+    if (Object.keys(errs).length > 0) { setFormErrors(errs); return; }
+    setFormErrors({});
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({ email, password,
@@ -1369,50 +1388,99 @@ export default function UniSwap() {
                 <div style={{ color: C.muted, fontSize: 13, marginTop: 3 }}>Step 1 of 2 — Your details</div>
               </div>
 
-              <Input placeholder="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />
+              {/* Full name */}
+              <div>
+                <Input
+                  placeholder="Full name"
+                  value={fullName}
+                  onChange={e => { setFullName(e.target.value); setFormErrors(p => ({ ...p, fullName: "" })); }}
+                  style={{ borderColor: formErrors.fullName ? "#FF5555" : undefined }}
+                />
+                {formErrors.fullName && <FieldError msg={formErrors.fullName} />}
+              </div>
 
+              {/* Email */}
               <div>
                 <Input
                   placeholder="Email (Gmail, Outlook, Yahoo…)"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  style={{ borderColor: email && email.includes("@") && !isAllowedEmail(email) ? "#FF5555" : email && isAllowedEmail(email) ? C.green : undefined }}
+                  onChange={e => { setEmail(e.target.value); setFormErrors(p => ({ ...p, email: "" })); }}
+                  style={{ borderColor: formErrors.email ? "#FF5555" : email && isAllowedEmail(email) ? C.green : undefined }}
                 />
-                {email && email.includes("@") && !isAllowedEmail(email) && (
-                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                    Use Gmail, Outlook, Yahoo, iCloud or similar
-                  </div>
-                )}
-                {email && isAllowedEmail(email) && (
-                  <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
-                    Valid email
-                  </div>
-                )}
+                {formErrors.email
+                  ? <FieldError msg={formErrors.email} />
+                  : email && isAllowedEmail(email) && (
+                    <div style={{ color: C.green, fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill={C.green}><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5l-4-4 1.41-1.41L10 13.67l6.59-6.59L18 8.5l-8 8z"/></svg>
+                      Valid email
+                    </div>
+                  )
+                }
               </div>
 
-              <Input placeholder="Matric number" value={matric} onChange={e => setMatric(e.target.value)} />
+              {/* Matric */}
+              <div>
+                <Input
+                  placeholder="Matric number"
+                  value={matric}
+                  onChange={e => { setMatric(e.target.value); setFormErrors(p => ({ ...p, matric: "" })); }}
+                  style={{ borderColor: formErrors.matric ? "#FF5555" : undefined }}
+                />
+                {formErrors.matric && <FieldError msg={formErrors.matric} />}
+              </div>
 
               <div>
                 <div style={{ position: "relative" }}>
-                  <Input type={showPassword ? "text" : "password"} placeholder="Create password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} style={{ paddingRight: 48 }} />
+                  <Input type={showPassword ? "text" : "password"} placeholder="Create password" value={password}
+                    onChange={e => { setPassword(e.target.value); setFormErrors(p => ({ ...p, password: "" })); }}
+                    style={{ paddingRight: 48, borderColor: formErrors.password ? "#FF5555" : undefined }} />
                   <div onClick={() => setShowPassword(p => !p)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", cursor: "pointer", color: C.muted, display: "flex" }}><EyeIcon open={showPassword} /></div>
                 </div>
-                {password && password.length < 8 && (
-                  <div style={{ color: "#FF5555", fontSize: 12, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FF5555"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                    At least 8 characters required
-                  </div>
-                )}
+                {formErrors.password && <FieldError msg={formErrors.password} />}
+                {/* Password strength rules — show as soon as user starts typing */}
+                {password.length > 0 && (() => {
+                  const rules = [
+                    { label: "At least 8 characters",          ok: password.length >= 8 },
+                    { label: "One uppercase letter (A–Z)",      ok: /[A-Z]/.test(password) },
+                    { label: "One lowercase letter (a–z)",      ok: /[a-z]/.test(password) },
+                    { label: "One number (0–9)",                ok: /[0-9]/.test(password) },
+                    { label: "One special character (!@#$…)",   ok: /[^A-Za-z0-9]/.test(password) },
+                  ];
+                  const passed = rules.filter(r => r.ok).length;
+                  const strengthLabel = ["", "Weak", "Fair", "Good", "Strong", "Very strong"][passed];
+                  const strengthColor = ["", "#FF5555", "#FF9500", "#FFCC00", C.green, C.accent][passed];
+                  return (
+                    <div style={{ marginTop: 10, background: `${C.pill}`, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                      {/* Strength bar */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                        <div style={{ flex: 1, height: 4, borderRadius: 4, background: C.border, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${(passed / 5) * 100}%`, background: strengthColor, borderRadius: 4, transition: "width .3s, background .3s" }} />
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: strengthColor, minWidth: 60, textAlign: "right" }}>{strengthLabel}</span>
+                      </div>
+                      {/* Rule checklist */}
+                      {rules.map(r => (
+                        <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: r.ok ? `${C.green}22` : `${C.border}`, border: `1.5px solid ${r.ok ? C.green : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all .2s" }}>
+                            {r.ok && <svg width="8" height="8" viewBox="0 0 24 24" fill={C.green}><path d="M20 6L9 17l-5-5"/><path d="M20 6L9 17l-5-5" stroke={C.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>}
+                          </div>
+                          <span style={{ fontSize: 12, color: r.ok ? C.text : C.muted, transition: "color .2s" }}>{r.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
-                <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .2s" }}>
-                  {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
-                </div>
-                <span style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
-              </label>
+              <div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                  <div onClick={() => { setAcceptedTerms(p => !p); setAcceptedPrivacy(p => !p); setFormErrors(p => ({ ...p, terms: "" })); }} style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${formErrors.terms ? "#FF5555" : acceptedTerms ? C.accent : C.muted}`, background: acceptedTerms ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .2s" }}>
+                    {acceptedTerms && <span style={{ color: "#000", fontSize: 13, fontWeight: 800 }}>✓</span>}
+                  </div>
+                  <span style={{ color: C.muted, fontSize: 13, lineHeight: 1.5 }}>I agree to the <span onClick={e => { e.stopPropagation(); setModal("terms"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Terms of Use</span> and <span onClick={e => { e.stopPropagation(); setModal("privacy"); }} style={{ color: C.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span></span>
+                </label>
+                {formErrors.terms && <FieldError msg={formErrors.terms} />}
+              </div>
 
               <Btn primary onClick={handleSendOtp} style={{ opacity: acceptedTerms && isAllowedEmail(email) ? 1 : 0.5 }}>
                 {loading ? "Creating account…" : "Join UniSwap 🚀"}
